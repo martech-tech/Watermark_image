@@ -1,0 +1,1472 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>WaterMark Pro</title>
+<style>
+:root {
+  --primary: #7c6ffc;
+  --primary-dark: #5a52d5;
+  --primary-glow: rgba(124,111,252,0.35);
+  --secondary: #ff6584;
+  --bg: #0c0c18;
+  --surface: #13131f;
+  --surface2: #1a1a2e;
+  --surface3: #0e0e1a;
+  --border: #242438;
+  --border2: #1e1e32;
+  --text: #ddddf5;
+  --text-muted: #7777a0;
+  --success: #3ddc84;
+  --success-glow: rgba(61,220,132,0.3);
+  --warning: #ffc947;
+  --danger: #ff4d6d;
+}
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg); color: var(--text); height: 100vh; overflow: hidden; }
+
+/* ─── SCROLLBAR ─────────────────────────────── */
+::-webkit-scrollbar { width: 5px; height: 5px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--border); border-radius: 99px; }
+::-webkit-scrollbar-thumb:hover { background: var(--primary); }
+
+/* ─── HEADER ────────────────────────────────── */
+header {
+  height: 52px; display: flex; align-items: center; gap: 14px;
+  padding: 0 20px; background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  position: relative; z-index: 50;
+}
+.logo { display: flex; align-items: center; gap: 10px; text-decoration: none; }
+.logo-icon { width: 30px; height: 30px; border-radius: 8px; background: linear-gradient(135deg,#7c6ffc,#ff6584); display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+.logo-text { font-size: 1.1rem; font-weight: 700; background: linear-gradient(135deg, var(--primary), var(--secondary)); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+.header-divider { width: 1px; height: 20px; background: var(--border); }
+.stat-pills { display: flex; gap: 8px; }
+.stat-pill { font-size: 0.72rem; background: var(--surface2); border: 1px solid var(--border); border-radius: 99px; padding: 3px 10px; color: var(--text-muted); display: flex; align-items: center; gap: 5px; }
+.stat-pill b { color: var(--primary); font-weight: 700; }
+.header-right { margin-left: auto; display: flex; align-items: center; gap: 8px; }
+.kbd { font-size: 0.7rem; background: var(--surface2); border: 1px solid var(--border); border-radius: 4px; padding: 2px 5px; color: var(--text-muted); }
+
+/* ─── APP LAYOUT ─────────────────────────────── */
+.app {
+  display: grid;
+  grid-template-columns: 355px 1fr;
+  height: calc(100vh - 52px);
+}
+.sidebar {
+  background: var(--surface);
+  border-right: 1px solid var(--border);
+  overflow-y: auto;
+  display: flex; flex-direction: column;
+}
+.main-col { display: flex; flex-direction: column; overflow: hidden; min-width: 0; }
+
+/* ─── SIDEBAR TABS ───────────────────────────── */
+.tab-bar { display: flex; border-bottom: 1px solid var(--border); flex-shrink: 0; }
+.tab-btn { flex: 1; padding: 11px 6px; background: none; border: none; color: var(--text-muted); cursor: pointer; font-size: 0.78rem; font-weight: 600; transition: all 0.18s; border-bottom: 2px solid transparent; letter-spacing: 0.2px; }
+.tab-btn.active { color: var(--primary); border-bottom-color: var(--primary); background: rgba(124,111,252,0.06); }
+.tab-btn:hover:not(.active) { color: var(--text); background: rgba(255,255,255,0.03); }
+.tab-panel { display: none; padding: 16px; flex: 1; }
+.tab-panel.active { display: block; }
+
+/* ─── FORM CONTROLS ──────────────────────────── */
+.section { margin-bottom: 18px; }
+.section-title {
+  font-size: 0.7rem; text-transform: uppercase; letter-spacing: 1.2px;
+  color: var(--text-muted); margin-bottom: 10px;
+  display: flex; align-items: center; gap: 8px;
+}
+.section-title::after { content: ''; flex: 1; height: 1px; background: var(--border2); }
+label { display: block; font-size: 0.79rem; color: var(--text-muted); margin-bottom: 5px; }
+input[type=text], input[type=number], select, textarea {
+  width: 100%; background: var(--surface3); border: 1px solid var(--border);
+  border-radius: 7px; padding: 7px 11px; color: var(--text); font-size: 0.87rem;
+  outline: none; transition: border-color 0.18s;
+}
+input[type=text]:focus, input[type=number]:focus, select:focus { border-color: var(--primary); box-shadow: 0 0 0 2px var(--primary-glow); }
+select option { background: var(--surface2); }
+input[type=range] { width: 100%; accent-color: var(--primary); cursor: pointer; height: 4px; }
+input[type=color] { width: 40px; height: 34px; border: 1px solid var(--border); border-radius: 7px; cursor: pointer; background: var(--surface3); padding: 2px; }
+.range-row { display: flex; align-items: center; gap: 8px; }
+.range-val { min-width: 40px; text-align: right; font-size: 0.8rem; color: var(--primary); font-weight: 700; background: rgba(124,111,252,0.1); border-radius: 5px; padding: 2px 5px; border: 1px solid rgba(124,111,252,0.2); }
+.row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.check-row { display: flex; align-items: center; gap: 8px; cursor: pointer; }
+.check-row input[type=checkbox] { width: 15px; height: 15px; accent-color: var(--primary); cursor: pointer; }
+.check-row span { font-size: 0.83rem; }
+
+/* ─── BUTTONS ────────────────────────────────── */
+.btn { padding: 8px 14px; border-radius: 7px; border: none; cursor: pointer; font-size: 0.82rem; font-weight: 600; transition: all 0.18s; display: inline-flex; align-items: center; gap: 5px; }
+.btn-primary { background: var(--primary); color: white; }
+.btn-primary:hover { background: var(--primary-dark); box-shadow: 0 4px 16px var(--primary-glow); transform: translateY(-1px); }
+.btn-secondary { background: transparent; border: 1px solid var(--border); color: var(--text-muted); }
+.btn-secondary:hover { border-color: var(--primary); color: var(--primary); background: rgba(124,111,252,0.06); }
+.btn-success { background: var(--success); color: #001a0d; font-weight: 700; }
+.btn-success:hover { box-shadow: 0 4px 16px var(--success-glow); transform: translateY(-1px); }
+.btn-full { width: 100%; justify-content: center; padding: 11px; }
+.btn-group { display: flex; gap: 6px; flex-wrap: wrap; }
+
+/* ─── UPLOAD ZONE ────────────────────────────── */
+.upload-zone {
+  border: 2px dashed var(--border); border-radius: 12px; padding: 28px 16px;
+  text-align: center; cursor: pointer; transition: all 0.25s; background: var(--surface3);
+}
+.upload-zone:hover, .upload-zone.drag-over {
+  border-color: var(--primary); background: rgba(124,111,252,0.06);
+  box-shadow: 0 0 0 4px var(--primary-glow);
+}
+.upload-zone p { font-size: 0.82rem; color: var(--text-muted); }
+.upload-zone strong { color: var(--text); }
+.upload-zone .upload-icon { color: var(--primary); margin-bottom: 10px; opacity: 0.8; }
+
+/* ─── TYPE TOGGLE ────────────────────────────── */
+.type-toggle { display: flex; background: var(--surface3); border-radius: 9px; padding: 3px; gap: 3px; margin-bottom: 14px; border: 1px solid var(--border2); }
+.type-btn { flex: 1; padding: 7px; border: none; border-radius: 7px; cursor: pointer; font-size: 0.78rem; font-weight: 600; transition: all 0.18s; background: transparent; color: var(--text-muted); }
+.type-btn.active { background: var(--primary); color: white; box-shadow: 0 2px 10px var(--primary-glow); }
+
+/* ─── POSITION GRID ──────────────────────────── */
+.pos-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; max-width: 170px; }
+.pos-btn { aspect-ratio: 1; border: 1px solid var(--border); border-radius: 6px; background: var(--surface3); cursor: pointer; transition: all 0.15s; display: flex; align-items: center; justify-content: center; font-size: 13px; color: var(--text-muted); }
+.pos-btn:hover { border-color: var(--primary); color: var(--primary); background: rgba(124,111,252,0.08); }
+.pos-btn.active { background: var(--primary); border-color: var(--primary); color: white; box-shadow: 0 2px 8px var(--primary-glow); }
+
+/* ─── FONT STYLE BTNS ────────────────────────── */
+.fstyle-btn { width: 34px; height: 34px; border: 1px solid var(--border); border-radius: 6px; background: var(--surface3); color: var(--text-muted); cursor: pointer; font-size: 0.95rem; display: flex; align-items: center; justify-content: center; transition: all 0.15s; }
+.fstyle-btn.active { background: var(--primary); border-color: var(--primary); color: white; }
+.fstyle-btn:hover:not(.active) { border-color: var(--primary); color: var(--primary); }
+
+/* ─── PROGRESS ───────────────────────────────── */
+.progress-bar { background: var(--surface3); border-radius: 99px; height: 6px; overflow: hidden; margin: 6px 0; border: 1px solid var(--border2); }
+.progress-fill { height: 100%; background: linear-gradient(90deg, var(--primary), var(--secondary)); border-radius: 99px; transition: width 0.25s; }
+.progress-label { font-size: 0.75rem; color: var(--text-muted); display: flex; justify-content: space-between; }
+
+/* ─── TILED ──────────────────────────────────── */
+.wm-tiled-options { display: none; }
+.wm-tiled-options.show { display: block; }
+
+/* ════════════════════════════════════════════════
+   PREVIEW AREA
+════════════════════════════════════════════════ */
+
+/* Toolbar */
+.preview-toolbar {
+  height: 44px; flex-shrink: 0;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  display: flex; align-items: center; gap: 4px; padding: 0 10px;
+}
+.ptb-sep { width: 1px; height: 20px; background: var(--border); margin: 0 4px; flex-shrink: 0; }
+.ptb-btn {
+  width: 30px; height: 30px; border-radius: 6px; border: 1px solid transparent;
+  background: transparent; color: var(--text-muted); cursor: pointer;
+  display: flex; align-items: center; justify-content: center; font-size: 0.88rem;
+  transition: all 0.15s; flex-shrink: 0;
+}
+.ptb-btn:hover { background: rgba(124,111,252,0.12); border-color: var(--primary); color: var(--primary); }
+.ptb-btn:active { transform: scale(0.9); }
+.ptb-btn.active { background: rgba(124,111,252,0.18); border-color: var(--primary); color: var(--primary); }
+.ptb-zoom-val {
+  font-size: 0.75rem; font-weight: 700; color: var(--primary);
+  background: rgba(124,111,252,0.12); border: 1px solid rgba(124,111,252,0.25);
+  border-radius: 6px; padding: 3px 7px; cursor: pointer; min-width: 44px;
+  text-align: center; transition: all 0.15s; flex-shrink: 0;
+}
+.ptb-zoom-val:hover { background: rgba(124,111,252,0.22); }
+.ptb-nav { display: flex; align-items: center; gap: 3px; }
+.ptb-counter {
+  font-size: 0.73rem; color: var(--text-muted); background: var(--surface2);
+  border: 1px solid var(--border); border-radius: 99px; padding: 3px 9px;
+  white-space: nowrap; flex-shrink: 0;
+}
+.ptb-counter b { color: var(--text); }
+.ptb-filename {
+  flex: 1; min-width: 0; font-size: 0.77rem; color: var(--text-muted);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin: 0 6px;
+}
+.ptb-filename b { color: var(--text); }
+.ptb-dims { font-size: 0.7rem; color: var(--text-muted); background: var(--surface2); border: 1px solid var(--border); border-radius: 5px; padding: 2px 7px; flex-shrink: 0; }
+
+/* Preview stage */
+.preview-stage {
+  flex: 1; position: relative; overflow: hidden; min-height: 0;
+  background-color: #0a0a14;
+  background-image:
+    linear-gradient(45deg, #12121e 25%, transparent 25%),
+    linear-gradient(-45deg, #12121e 25%, transparent 25%),
+    linear-gradient(45deg, transparent 75%, #12121e 75%),
+    linear-gradient(-45deg, transparent 75%, #12121e 75%);
+  background-size: 18px 18px;
+  background-position: 0 0, 0 9px, 9px -9px, -9px 0px;
+  cursor: default;
+}
+.preview-stage.panning { cursor: grabbing !important; }
+
+/* Canvas wrapper — gets CSS transform for zoom/pan */
+.preview-canvas-wrap {
+  position: absolute; top: 50%; left: 50%;
+  transform: translate(-50%, -50%);
+  transform-origin: center center;
+  will-change: transform;
+}
+#previewCanvas {
+  display: block;
+  border-radius: 2px;
+  box-shadow:
+    0 0 0 1px rgba(255,255,255,0.07),
+    0 8px 40px rgba(0,0,0,0.75),
+    0 2px 8px rgba(0,0,0,0.5);
+}
+
+/* Drag handle */
+#wmHandle {
+  position: absolute; pointer-events: all;
+  transform: translate(-50%,-50%);
+  display: none; z-index: 30; cursor: grab;
+}
+#wmHandle:active { cursor: grabbing; }
+.wm-ring {
+  width: 22px; height: 22px; border-radius: 50%;
+  background: var(--primary); border: 2.5px solid white;
+  box-shadow: 0 0 0 3px var(--primary-glow), 0 3px 12px rgba(0,0,0,0.5);
+  transition: transform 0.15s, box-shadow 0.15s;
+}
+#wmHandle:hover .wm-ring { transform: scale(1.35); box-shadow: 0 0 0 5px var(--primary-glow), 0 4px 16px rgba(0,0,0,0.6); }
+#wmHandle.dragging .wm-ring { transform: scale(1.15); background: var(--secondary); cursor: grabbing; }
+.wm-tip {
+  position: absolute; bottom: 130%; left: 50%; transform: translateX(-50%);
+  background: var(--primary); color: white; font-size: 8.5px; font-weight: 700;
+  border-radius: 4px; padding: 2px 6px; white-space: nowrap;
+  opacity: 0; transition: opacity 0.12s; pointer-events: none;
+}
+#wmHandle:hover .wm-tip { opacity: 1; }
+
+/* Drop-to-upload overlay */
+.stage-drop-hint {
+  position: absolute; inset: 12px; border: 2px dashed rgba(124,111,252,0.4);
+  border-radius: 12px; display: flex; align-items: center; justify-content: center;
+  background: rgba(124,111,252,0.05); pointer-events: none; opacity: 0; transition: opacity 0.2s;
+  font-size: 1rem; color: var(--primary); font-weight: 600; gap: 8px;
+}
+.preview-stage.drag-over .stage-drop-hint { opacity: 1; }
+
+/* Placeholder */
+.preview-placeholder {
+  position: absolute; inset: 0; display: flex; flex-direction: column;
+  align-items: center; justify-content: center; pointer-events: none; gap: 0;
+}
+.ph-icon-wrap {
+  width: 110px; height: 110px; border-radius: 22px;
+  background: linear-gradient(135deg, rgba(124,111,252,0.1), rgba(255,101,132,0.07));
+  border: 2px dashed rgba(124,111,252,0.22);
+  display: flex; align-items: center; justify-content: center; margin-bottom: 18px;
+}
+.ph-icon-wrap svg { opacity: 0.3; }
+.preview-placeholder h3 { font-size: 0.95rem; color: var(--text-muted); font-weight: 500; margin-bottom: 5px; }
+.preview-placeholder p { font-size: 0.76rem; color: rgba(119,119,160,0.55); margin-bottom: 18px; }
+.ph-chips { display: flex; gap: 6px; flex-wrap: wrap; justify-content: center; }
+.ph-chip { font-size: 0.68rem; background: rgba(124,111,252,0.08); border: 1px solid rgba(124,111,252,0.18); border-radius: 99px; padding: 3px 9px; color: rgba(124,111,252,0.75); }
+
+/* Zoom hint toast */
+.zoom-toast {
+  position: absolute; bottom: 14px; left: 50%; transform: translateX(-50%);
+  background: rgba(13,13,26,0.92); border: 1px solid var(--border);
+  border-radius: 8px; padding: 6px 14px; font-size: 0.75rem; color: var(--text-muted);
+  backdrop-filter: blur(8px); pointer-events: none; opacity: 0; transition: opacity 0.3s;
+  white-space: nowrap; z-index: 20;
+}
+.zoom-toast.show { opacity: 1; }
+
+/* ════════════════════════════════════════════════
+   GALLERY STRIP
+════════════════════════════════════════════════ */
+.gallery-strip {
+  border-top: 1px solid var(--border);
+  display: flex; flex-direction: column;
+  background: var(--surface3);
+  flex-shrink: 0;
+  height: 195px; min-height: 90px;
+  overflow: hidden;
+  position: relative;
+}
+
+/* Drag-resize bar at top */
+.gal-resize-bar {
+  height: 6px; flex-shrink: 0; cursor: ns-resize;
+  background: transparent; position: relative; z-index: 5;
+  transition: background 0.15s;
+}
+.gal-resize-bar:hover, .gal-resize-bar.active { background: var(--primary); }
+.gal-resize-bar::after {
+  content: ''; position: absolute; left: 50%; top: 50%;
+  transform: translate(-50%,-50%);
+  width: 28px; height: 3px; border-radius: 99px; background: var(--border);
+  transition: background 0.15s;
+}
+.gal-resize-bar:hover::after { background: white; }
+
+/* Gallery header bar */
+.gal-header {
+  height: 36px; flex-shrink: 0; display: flex; align-items: center; gap: 6px;
+  padding: 0 10px; background: var(--surface); border-bottom: 1px solid var(--border);
+}
+.gal-title { font-size: 0.78rem; font-weight: 700; color: var(--text); display: flex; align-items: center; gap: 5px; }
+.gal-badge { font-size: 0.65rem; background: rgba(124,111,252,0.2); border: 1px solid rgba(124,111,252,0.3); border-radius: 99px; padding: 1px 7px; color: var(--primary); font-weight: 700; }
+.gal-status { font-size: 0.68rem; color: var(--text-muted); margin-left: 2px; }
+.gal-spacer { flex: 1; }
+.gal-btn { height: 24px; padding: 0 8px; border-radius: 5px; border: 1px solid var(--border); background: transparent; color: var(--text-muted); cursor: pointer; font-size: 0.69rem; font-weight: 600; transition: all 0.15s; white-space: nowrap; }
+.gal-btn:hover { border-color: var(--primary); color: var(--primary); background: rgba(124,111,252,0.07); }
+.gal-sep { width: 1px; height: 16px; background: var(--border); margin: 0 2px; }
+.sz-grp { display: flex; gap: 2px; background: var(--surface2); border-radius: 5px; padding: 2px; }
+.sz-btn { width: 20px; height: 20px; border: none; border-radius: 3px; background: transparent; color: var(--text-muted); cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 9px; transition: all 0.15s; }
+.sz-btn.active { background: var(--primary); color: white; }
+
+/* Scrollable thumb area */
+.gal-scroll { flex: 1; overflow-y: auto; overflow-x: hidden; }
+.gal-grid {
+  display: grid; gap: 5px; padding: 7px;
+  grid-template-columns: repeat(auto-fill, minmax(72px, 1fr));
+}
+.gal-grid.sz-sm { grid-template-columns: repeat(auto-fill, minmax(52px,1fr)); gap: 4px; padding: 5px; }
+.gal-grid.sz-lg { grid-template-columns: repeat(auto-fill, minmax(100px,1fr)); gap: 6px; padding: 9px; }
+
+/* Thumb card */
+.thumb {
+  position: relative; aspect-ratio: 1; border-radius: 6px; overflow: hidden;
+  cursor: pointer; border: 2px solid transparent;
+  transition: border-color 0.13s, box-shadow 0.13s, transform 0.1s;
+  background: var(--surface2);
+}
+.thumb img { width: 100%; height: 100%; object-fit: cover; display: block; pointer-events: none; }
+.thumb:hover { transform: translateY(-2px); border-color: rgba(124,111,252,0.55); box-shadow: 0 4px 14px rgba(0,0,0,0.45); }
+.thumb.is-current { border-color: var(--primary) !important; box-shadow: 0 0 0 2px var(--primary-glow), 0 6px 20px rgba(0,0,0,0.4) !important; transform: translateY(-1px); }
+.thumb.is-selected { border-color: var(--success); box-shadow: 0 0 0 1px rgba(61,220,132,0.2); }
+.thumb.is-done { border-color: rgba(61,220,132,0.4); }
+.thumb.is-current.is-done { border-color: var(--primary) !important; }
+
+.thumb-hover-info {
+  position: absolute; bottom: 0; left: 0; right: 0;
+  background: linear-gradient(transparent, rgba(0,0,0,0.85));
+  padding: 14px 4px 3px; opacity: 0; transition: opacity 0.13s;
+}
+.thumb:hover .thumb-hover-info,
+.thumb.is-current .thumb-hover-info { opacity: 1; }
+.thumb-hover-info span { display: block; font-size: 7.5px; color: rgba(255,255,255,0.85); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+.thumb-badges { position: absolute; top: 3px; left: 3px; display: flex; flex-direction: column; gap: 2px; }
+.tbadge { font-size: 7px; font-weight: 700; border-radius: 3px; padding: 1px 4px; line-height: 1.4; }
+.tbadge-done { background: var(--success); color: #001a0d; }
+.tbadge-sel { background: rgba(124,111,252,0.85); color: white; }
+.thumb-num { position: absolute; top: 3px; right: 3px; font-size: 7px; background: rgba(0,0,0,0.55); color: rgba(255,255,255,0.65); border-radius: 3px; padding: 1px 4px; }
+
+.gal-empty {
+  grid-column: 1/-1; display: flex; flex-direction: column;
+  align-items: center; justify-content: center; padding: 18px 10px;
+  color: var(--text-muted); font-size: 0.79rem; gap: 5px;
+}
+
+/* ─── NOTIFICATIONS ──────────────────────────── */
+#notifications { position: fixed; top: 62px; right: 18px; z-index: 9999; display: flex; flex-direction: column; gap: 7px; pointer-events: none; }
+.notif {
+  background: var(--surface); border: 1px solid var(--border); border-radius: 10px;
+  padding: 10px 14px; min-width: 240px; font-size: 0.82rem;
+  display: flex; align-items: center; gap: 9px;
+  animation: notifIn 0.25s cubic-bezier(.34,1.56,.64,1);
+  pointer-events: all; backdrop-filter: blur(10px);
+}
+.notif.success { border-color: rgba(61,220,132,0.5); }
+.notif.error { border-color: rgba(255,77,109,0.5); }
+.notif.warning { border-color: rgba(255,201,71,0.5); }
+.notif.info { border-color: rgba(124,111,252,0.5); }
+@keyframes notifIn { from { transform: translateX(110%) scale(0.9); opacity: 0; } to { transform: none; opacity: 1; } }
+
+/* ─── MISC ───────────────────────────────────── */
+.badge { font-size: 0.67rem; background: var(--primary); color: white; border-radius: 99px; padding: 1px 6px; margin-left: 3px; }
+#loadingOverlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.82); z-index: 9998; align-items: center; justify-content: center; flex-direction: column; gap: 18px; }
+#loadingOverlay.show { display: flex; }
+.spinner { width: 44px; height: 44px; border: 3px solid var(--border); border-top-color: var(--primary); border-radius: 50%; animation: spin 0.75s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+</style>
+</head>
+<body>
+
+<!-- HEADER -->
+<header>
+  <div class="logo">
+    <div class="logo-icon">
+      <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
+        <path d="M2 13l5-7 4.5 5.5L13.5 8 17 13H2z" fill="white" opacity="0.92"/>
+        <circle cx="5" cy="6" r="1.8" fill="white" opacity="0.7"/>
+      </svg>
+    </div>
+    <span class="logo-text">WaterMark Pro</span>
+  </div>
+  <div class="header-divider"></div>
+  <div class="stat-pills">
+    <div class="stat-pill">รูปทั้งหมด <b id="statUploaded">0</b></div>
+    <div class="stat-pill">ประมวลผล <b id="statProcessed">0</b></div>
+    <div class="stat-pill">พร้อมโหลด <b id="statReady">0</b></div>
+  </div>
+  <div class="header-right">
+    <span class="kbd">←→ เปลี่ยนรูป</span>
+    <span class="kbd">Scroll ซูม</span>
+    <span class="kbd">Ctrl+A เลือกทั้งหมด</span>
+  </div>
+</header>
+
+<div class="app">
+  <!-- ═══ SIDEBAR ═══════════════════════════════ -->
+  <aside class="sidebar">
+    <div class="tab-bar">
+      <button class="tab-btn active" onclick="switchTab('upload')">📁 อัพโหลด</button>
+      <button class="tab-btn" onclick="switchTab('watermark')">💧 ลายน้ำ</button>
+      <button class="tab-btn" onclick="switchTab('export')">⬇️ ส่งออก</button>
+    </div>
+
+    <!-- UPLOAD TAB -->
+    <div id="tab-upload" class="tab-panel active">
+      <div class="section">
+        <div class="section-title">เพิ่มรูปภาพ</div>
+        <div class="upload-zone" id="uploadZone" onclick="document.getElementById('fileInput').click()">
+          <div class="upload-icon">
+            <svg width="40" height="40" viewBox="0 0 40 40" fill="currentColor"><path d="M20 4C11.2 4 4 11.2 4 20s7.2 16 16 16 16-7.2 16-16S28.8 4 20 4zm-2 22v-7h-5l7-10 7 10h-5v7h-4z"/></svg>
+          </div>
+          <p><strong>คลิกหรือลากไฟล์มาวางที่นี่</strong></p>
+          <p style="margin-top:5px">JPG · PNG · WebP · GIF · BMP</p>
+          <p style="margin-top:4px;color:var(--primary);font-weight:700">รองรับ 10,000+ รูปต่อครั้ง</p>
+        </div>
+        <input type="file" id="fileInput" multiple accept="image/*" style="display:none">
+      </div>
+      <div class="section">
+        <div class="section-title">จัดการไฟล์</div>
+        <div class="btn-group">
+          <button class="btn btn-secondary" onclick="clearAll()">🗑 ล้างทั้งหมด</button>
+          <button class="btn btn-secondary" onclick="selectAllThumbs()">☑ เลือกทั้งหมด</button>
+          <button class="btn btn-secondary" onclick="removeSelected()">✂ ลบที่เลือก</button>
+        </div>
+      </div>
+      <div class="section">
+        <div class="section-title">เรียงลำดับ</div>
+        <select id="sortOrder" onchange="sortImages()">
+          <option value="name">ชื่อไฟล์ A→Z</option>
+          <option value="name-desc">ชื่อไฟล์ Z→A</option>
+          <option value="size">ขนาดเล็ก→ใหญ่</option>
+          <option value="size-desc">ขนาดใหญ่→เล็ก</option>
+          <option value="date">วันที่ใหม่→เก่า</option>
+        </select>
+      </div>
+      <div class="section">
+        <div class="progress-label">
+          <span>ความคืบหน้าการโหลด</span>
+          <span id="loadProgress">0 / 0</span>
+        </div>
+        <div class="progress-bar"><div class="progress-fill" id="loadBar" style="width:0%"></div></div>
+      </div>
+    </div>
+
+    <!-- WATERMARK TAB -->
+    <div id="tab-watermark" class="tab-panel">
+      <div class="section">
+        <div class="section-title">ประเภทลายน้ำ</div>
+        <div class="type-toggle">
+          <button class="type-btn active" onclick="setWmType('text')" id="typeText">✏️ ข้อความ</button>
+          <button class="type-btn" onclick="setWmType('image')" id="typeImage">🖼️ รูปภาพ</button>
+          <button class="type-btn" onclick="setWmType('both')" id="typeBoth">✨ ผสม</button>
+        </div>
+      </div>
+
+      <div id="textWmSection">
+        <div class="section">
+          <div class="section-title">ข้อความ</div>
+          <textarea id="wmText" rows="2" style="resize:vertical;font-family:inherit" oninput="updatePreview()">© Copyright 2024</textarea>
+          <div style="margin-top:8px">
+            <label>ฟอนต์</label>
+            <select id="wmFont" onchange="updatePreview()">
+              <option>Arial</option><option>Arial Black</option><option>Georgia</option>
+              <option>Times New Roman</option><option>Courier New</option><option>Verdana</option>
+              <option>Tahoma</option><option>Impact</option><option>Comic Sans MS</option><option>Trebuchet MS</option>
+            </select>
+          </div>
+        </div>
+        <div class="section">
+          <div class="section-title">สไตล์</div>
+          <div class="row2">
+            <div>
+              <label>ขนาด</label>
+              <div class="range-row">
+                <input type="range" id="wmFontSize" min="8" max="200" value="36" oninput="updatePreview();document.getElementById('wmFontSizeVal').textContent=this.value+'px'">
+                <div class="range-val" id="wmFontSizeVal">36px</div>
+              </div>
+            </div>
+            <div>
+              <label>B / I / U</label>
+              <div style="display:flex;gap:5px;margin-top:4px">
+                <button class="fstyle-btn" id="fsBold" onclick="toggleStyle('bold')" style="font-weight:bold">B</button>
+                <button class="fstyle-btn" id="fsItalic" onclick="toggleStyle('italic')" style="font-style:italic">I</button>
+                <button class="fstyle-btn" id="fsUnderline" onclick="toggleStyle('underline')" style="text-decoration:underline">U</button>
+              </div>
+            </div>
+          </div>
+          <div class="row2" style="margin-top:10px">
+            <div>
+              <label>สีข้อความ</label>
+              <div style="display:flex;gap:6px;align-items:center">
+                <input type="color" id="wmColor" value="#ffffff" oninput="updatePreview()">
+                <input type="text" id="wmColorHex" value="#ffffff" style="flex:1;font-size:0.78rem" oninput="syncColorFromHex()">
+              </div>
+            </div>
+            <div>
+              <label>เส้นขอบ</label>
+              <div style="display:flex;gap:6px;align-items:center">
+                <input type="color" id="wmStrokeColor" value="#000000" oninput="updatePreview()">
+                <div class="range-row" style="flex:1">
+                  <input type="range" id="wmStrokeWidth" min="0" max="10" value="2" oninput="updatePreview();document.getElementById('wmStrokeVal').textContent=this.value">
+                  <div class="range-val" id="wmStrokeVal">2</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div id="imageWmSection" style="display:none">
+        <div class="section">
+          <div class="section-title">รูปลายน้ำ</div>
+          <div class="upload-zone" onclick="document.getElementById('wmImgInput').click()" style="padding:16px">
+            <p id="wmImgName">คลิกเลือกรูปลายน้ำ</p>
+            <p style="font-size:0.73rem;margin-top:3px">PNG แนะนำ (รองรับ transparency)</p>
+          </div>
+          <input type="file" id="wmImgInput" accept="image/*" style="display:none" onchange="loadWmImage(this)">
+          <div id="wmImgPreviewBox" style="display:none;margin-top:8px;text-align:center">
+            <img id="wmImgPreview" style="max-height:75px;max-width:100%;border-radius:6px;border:1px solid var(--border)">
+          </div>
+        </div>
+        <div class="section">
+          <label>ขนาดรูปลายน้ำ (%)</label>
+          <div class="range-row">
+            <input type="range" id="wmImgSize" min="1" max="100" value="25" oninput="updatePreview();document.getElementById('wmImgSizeVal').textContent=this.value+'%'">
+            <div class="range-val" id="wmImgSizeVal">25%</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="section">
+        <div class="section-title">ความโปร่งใส & มุม</div>
+        <label>Opacity</label>
+        <div class="range-row">
+          <input type="range" id="wmOpacity" min="0" max="100" value="70" oninput="updatePreview();document.getElementById('wmOpacityVal').textContent=this.value+'%'">
+          <div class="range-val" id="wmOpacityVal">70%</div>
+        </div>
+        <label style="margin-top:10px">หมุน (°)</label>
+        <div class="range-row">
+          <input type="range" id="wmRotation" min="-180" max="180" value="-30" oninput="updatePreview();document.getElementById('wmRotationVal').textContent=this.value+'°'">
+          <div class="range-val" id="wmRotationVal">-30°</div>
+        </div>
+      </div>
+
+      <div class="section">
+        <div class="section-title">ตำแหน่ง</div>
+        <div class="check-row" style="margin-bottom:10px">
+          <input type="checkbox" id="wmTiled" onchange="toggleTiled()">
+          <span>แบบกระเบื้อง (Tiled)</span>
+        </div>
+        <div class="wm-tiled-options" id="tiledOptions">
+          <label>ช่องว่าง</label>
+          <div class="range-row" style="margin-bottom:10px">
+            <input type="range" id="wmTileSpacing" min="0" max="300" value="100" oninput="updatePreview();document.getElementById('wmTileSpacingVal').textContent=this.value+'px'">
+            <div class="range-val" id="wmTileSpacingVal">100px</div>
+          </div>
+        </div>
+        <div id="posGridSection">
+          <label style="margin-bottom:8px">ตำแหน่งด่วน</label>
+          <div class="pos-grid">
+            <button class="pos-btn" onclick="setPosition('top-left')" data-pos="top-left">↖</button>
+            <button class="pos-btn" onclick="setPosition('top-center')" data-pos="top-center">↑</button>
+            <button class="pos-btn" onclick="setPosition('top-right')" data-pos="top-right">↗</button>
+            <button class="pos-btn" onclick="setPosition('middle-left')" data-pos="middle-left">←</button>
+            <button class="pos-btn active" onclick="setPosition('center')" data-pos="center">◉</button>
+            <button class="pos-btn" onclick="setPosition('middle-right')" data-pos="middle-right">→</button>
+            <button class="pos-btn" onclick="setPosition('bottom-left')" data-pos="bottom-left">↙</button>
+            <button class="pos-btn" onclick="setPosition('bottom-center')" data-pos="bottom-center">↓</button>
+            <button class="pos-btn" onclick="setPosition('bottom-right')" data-pos="bottom-right">↘</button>
+          </div>
+          <div class="row2" style="margin-top:9px">
+            <div><label>X (%)</label><input type="number" id="wmX" value="50" min="0" max="100" oninput="updatePreview()"></div>
+            <div><label>Y (%)</label><input type="number" id="wmY" value="50" min="0" max="100" oninput="updatePreview()"></div>
+          </div>
+          <p style="font-size:0.72rem;color:var(--primary);margin-top:7px">💡 ลากจุดสีม่วงบนภาพตัวอย่างได้</p>
+        </div>
+      </div>
+
+      <div class="section">
+        <div class="section-title">เอฟเฟกต์</div>
+        <div class="check-row" style="margin-bottom:7px">
+          <input type="checkbox" id="wmShadow" onchange="updatePreview()"><span>เงา (Drop Shadow)</span>
+        </div>
+        <div class="check-row">
+          <input type="checkbox" id="wmBlend" onchange="updatePreview()"><span>Multiply Blend Mode</span>
+        </div>
+      </div>
+
+      <button class="btn btn-primary btn-full" onclick="applyToSelected()">✅ ใช้กับภาพที่เลือก</button>
+      <button class="btn btn-secondary btn-full" style="margin-top:7px" onclick="applyToAll()">🔄 ใช้กับทุกภาพ</button>
+    </div>
+
+    <!-- EXPORT TAB -->
+    <div id="tab-export" class="tab-panel">
+      <div class="section">
+        <div class="section-title">รูปแบบไฟล์</div>
+        <select id="exportFormat">
+          <option value="jpeg">JPEG — ไฟล์เล็ก</option>
+          <option value="png">PNG — คุณภาพสูงสุด</option>
+          <option value="webp">WebP — สมดุล</option>
+        </select>
+        <label style="margin-top:10px">คุณภาพ</label>
+        <div class="range-row">
+          <input type="range" id="exportQuality" min="1" max="100" value="92" oninput="document.getElementById('exportQualityVal').textContent=this.value+'%'">
+          <div class="range-val" id="exportQualityVal">92%</div>
+        </div>
+      </div>
+      <div class="section">
+        <div class="section-title">ปรับขนาด</div>
+        <div class="check-row" style="margin-bottom:8px">
+          <input type="checkbox" id="resizeOutput" onchange="toggleResize()"><span>ปรับขนาดรูปผลลัพธ์</span>
+        </div>
+        <div id="resizeOptions" style="display:none">
+          <div class="row2">
+            <div><label>กว้าง (px)</label><input type="number" id="resizeW" value="1920" min="1"></div>
+            <div><label>สูง (px)</label><input type="number" id="resizeH" value="1080" min="1"></div>
+          </div>
+          <div class="check-row" style="margin-top:7px">
+            <input type="checkbox" id="keepAspect" checked><span>รักษาสัดส่วน</span>
+          </div>
+        </div>
+      </div>
+      <div class="section">
+        <div class="section-title">ชื่อไฟล์</div>
+        <label>คำนำหน้า</label>
+        <input type="text" id="filePrefix" value="wm_">
+        <label style="margin-top:8px">โฟลเดอร์ใน ZIP</label>
+        <input type="text" id="folderName" value="watermarked">
+        <div class="check-row" style="margin-top:7px">
+          <input type="checkbox" id="keepFilename" checked><span>คงชื่อไฟล์เดิม</span>
+        </div>
+      </div>
+      <div class="section">
+        <div class="section-title">ความคืบหน้า</div>
+        <div class="progress-label">
+          <span id="processLabel">พร้อมประมวลผล</span>
+          <span id="processCount">0 / 0</span>
+        </div>
+        <div class="progress-bar"><div class="progress-fill" id="processBar" style="width:0%"></div></div>
+        <div id="processRate" style="font-size:0.72rem;color:var(--text-muted);margin-top:4px"></div>
+      </div>
+      <button class="btn btn-success btn-full" onclick="processAndDownload()" id="downloadBtn">⬇️ ประมวลผล &amp; ดาวน์โหลด ZIP</button>
+      <button class="btn btn-secondary btn-full" style="margin-top:7px" onclick="downloadSingle()">📄 ดาวน์โหลดภาพปัจจุบัน</button>
+      <button class="btn btn-secondary btn-full" style="margin-top:7px;display:none" onclick="cancelProcess()" id="cancelBtn">⛔ หยุดการประมวลผล</button>
+      <div style="margin-top:12px;padding:9px 11px;background:var(--surface3);border-radius:8px;font-size:0.74rem;color:var(--text-muted);border:1px solid var(--border2)">
+        <b style="color:var(--warning)">⚡ ประสิทธิภาพสูง</b><br>
+        ประมวลผลแบบ batch — รองรับ 10,000+ รูปโดยไม่ค้าง
+      </div>
+    </div>
+  </aside>
+
+  <!-- ═══ MAIN COLUMN ════════════════════════════ -->
+  <div class="main-col">
+
+    <!-- PREVIEW PANEL -->
+    <div class="main-preview" style="flex:1;display:flex;flex-direction:column;min-height:0;">
+
+      <!-- Toolbar -->
+      <div class="preview-toolbar">
+        <!-- Navigation -->
+        <div class="ptb-nav">
+          <button class="ptb-btn" onclick="navigatePreview(-1)" title="ภาพก่อนหน้า (←)">‹</button>
+          <div class="ptb-counter"><b id="ptbCurrent">—</b> / <span id="ptbTotal">0</span></div>
+          <button class="ptb-btn" onclick="navigatePreview(1)" title="ภาพถัดไป (→)">›</button>
+        </div>
+
+        <div class="ptb-sep"></div>
+
+        <!-- Zoom -->
+        <button class="ptb-btn" onclick="adjustZoom(-0.2)" title="ซูมออก">−</button>
+        <div class="ptb-zoom-val" id="ptbZoomVal" onclick="resetZoom()" title="คลิกเพื่อรีเซ็ต">100%</div>
+        <button class="ptb-btn" onclick="adjustZoom(0.2)" title="ซูมเข้า">+</button>
+        <button class="ptb-btn" onclick="fitZoom()" title="พอดีหน้าจอ">⊡</button>
+        <button class="ptb-btn" onclick="actualZoom()" title="ขนาดจริง">1:1</button>
+
+        <div class="ptb-sep"></div>
+
+        <!-- File info -->
+        <div class="ptb-filename" id="ptbFilename">— ยังไม่ได้เลือกภาพ —</div>
+        <div class="ptb-dims" id="ptbDims" style="display:none"></div>
+
+        <div class="ptb-sep"></div>
+
+        <!-- Actions -->
+        <button class="ptb-btn" onclick="downloadSingle()" title="ดาวน์โหลดภาพนี้">⬇</button>
+        <button class="ptb-btn" id="ptbProcessBtn" onclick="processCurrentAndRefresh()" title="ใส่ลายน้ำภาพนี้">✓</button>
+      </div>
+
+      <!-- Stage -->
+      <div class="preview-stage" id="previewStage">
+        <div class="preview-bg"></div>
+
+        <!-- Placeholder -->
+        <div class="preview-placeholder" id="previewPlaceholder">
+          <div class="ph-icon-wrap">
+            <svg width="56" height="56" viewBox="0 0 56 56" fill="currentColor">
+              <rect x="4" y="4" width="48" height="48" rx="8" fill="none" stroke="currentColor" stroke-width="2" opacity="0.4"/>
+              <path d="M8 42l14-18 10 13 7-9 9 14H8z" opacity="0.5"/>
+              <circle cx="18" cy="20" r="5" opacity="0.4"/>
+            </svg>
+          </div>
+          <h3>อัพโหลดรูปภาพเพื่อเริ่มต้น</h3>
+          <p>ลากไฟล์มาวางที่นี่ หรือคลิก "อัพโหลด" ในแถบซ้าย</p>
+          <div class="ph-chips">
+            <span class="ph-chip">JPG</span>
+            <span class="ph-chip">PNG</span>
+            <span class="ph-chip">WebP</span>
+            <span class="ph-chip">GIF</span>
+            <span class="ph-chip">BMP</span>
+          </div>
+        </div>
+
+        <!-- Canvas wrapper -->
+        <div class="preview-canvas-wrap" id="canvasWrap" style="display:none">
+          <canvas id="previewCanvas"></canvas>
+          <!-- Drag handle -->
+          <div id="wmHandle">
+            <div class="wm-ring"></div>
+            <div class="wm-tip">ลากเปลี่ยนตำแหน่ง</div>
+          </div>
+        </div>
+
+        <!-- Drop hint overlay -->
+        <div class="stage-drop-hint">📂 วางรูปเพื่อเพิ่ม</div>
+
+        <!-- Zoom toast -->
+        <div class="zoom-toast" id="zoomToast"></div>
+      </div>
+    </div>
+
+    <!-- GALLERY STRIP -->
+    <div class="gallery-strip" id="galleryStrip">
+      <!-- Resize bar -->
+      <div class="gal-resize-bar" id="galResizeBar"></div>
+
+      <!-- Header -->
+      <div class="gal-header">
+        <div class="gal-title">
+          รูปภาพ
+          <span class="gal-badge" id="galBadge">0</span>
+          <span class="gal-status" id="galStatus"></span>
+        </div>
+        <div class="gal-spacer"></div>
+        <div class="gal-btn" onclick="selectAllThumbs()">เลือกทั้งหมด</div>
+        <div class="gal-btn" onclick="deselectAll()">ยกเลิก</div>
+        <div class="gal-btn" onclick="toggleSelectProcessed()">เลือกที่ทำแล้ว</div>
+        <div class="gal-sep"></div>
+        <div class="sz-grp">
+          <button class="sz-btn" onclick="setThumbSize('sm')" title="เล็ก">▪▪</button>
+          <button class="sz-btn active" onclick="setThumbSize('md')" title="กลาง">◼</button>
+          <button class="sz-btn" onclick="setThumbSize('lg')" title="ใหญ่">⬛</button>
+        </div>
+      </div>
+
+      <!-- Scrollable grid -->
+      <div class="gal-scroll">
+        <div class="gal-grid" id="galGrid"></div>
+      </div>
+    </div>
+
+  </div><!-- /main-col -->
+</div><!-- /app -->
+
+<div id="loadingOverlay"><div class="spinner"></div><div>กำลังประมวลผล...</div></div>
+<div id="notifications"></div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<script>
+// ═══════════════════════════════════════════════════
+// STATE
+// ═══════════════════════════════════════════════════
+const S = {
+  images: [],
+  currentIdx: -1,
+  wmType: 'text',
+  wmImgEl: null,
+  isTiled: false,
+  fontStyles: { bold: false, italic: false, underline: false },
+  cancelFlag: false,
+  lastClickIdx: undefined,
+  thumbSize: 'md',
+  // zoom / pan
+  zoom: 1,
+  panX: 0,
+  panY: 0,
+  isPanning: false,
+  panStartX: 0,
+  panStartY: 0,
+  panStartPX: 0,
+  panStartPY: 0,
+  // wm drag
+  wmDragging: false,
+};
+let nextId = 0;
+
+// ─── HELPERS ────────────────────────────────────────
+const $ = id => document.getElementById(id);
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+
+// ═══════════════════════════════════════════════════
+// TABS
+// ═══════════════════════════════════════════════════
+function switchTab(name) {
+  const names = ['upload','watermark','export'];
+  document.querySelectorAll('.tab-btn').forEach((b,i) => b.classList.toggle('active', names[i]===name));
+  document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+  $('tab-'+name).classList.add('active');
+}
+
+// ═══════════════════════════════════════════════════
+// UPLOAD
+// ═══════════════════════════════════════════════════
+const uploadZone = $('uploadZone');
+uploadZone.addEventListener('dragover', e => { e.preventDefault(); uploadZone.classList.add('drag-over'); });
+uploadZone.addEventListener('dragleave', () => uploadZone.classList.remove('drag-over'));
+uploadZone.addEventListener('drop', e => { e.preventDefault(); uploadZone.classList.remove('drag-over'); addImages([...e.dataTransfer.files].filter(f=>f.type.startsWith('image/'))); });
+
+$('fileInput').addEventListener('change', function() { addImages([...this.files]); this.value=''; });
+
+// Drag onto stage
+const stage = $('previewStage');
+stage.addEventListener('dragover', e => { e.preventDefault(); stage.classList.add('drag-over'); });
+stage.addEventListener('dragleave', () => stage.classList.remove('drag-over'));
+stage.addEventListener('drop', e => { e.preventDefault(); stage.classList.remove('drag-over'); const f=[...e.dataTransfer.files].filter(f=>f.type.startsWith('image/')); if(f.length) addImages(f); });
+
+async function addImages(files) {
+  if (!files.length) return;
+  const total = files.length;
+  let done = 0;
+  const BATCH = 50;
+  for (let i = 0; i < files.length; i += BATCH) {
+    const batch = files.slice(i, i+BATCH);
+    await Promise.all(batch.map(file => new Promise(resolve => {
+      const reader = new FileReader();
+      reader.onload = ev => {
+        const item = { id: nextId++, file, name: file.name, src: ev.target.result, img: null, selected: false, processed: false, resultBlob: null, thumb: null };
+        const img = new Image();
+        img.onload = () => {
+          item.img = img;
+          const tc = document.createElement('canvas');
+          const ts = 100, ratio = img.width/img.height;
+          tc.width = ratio>1 ? ts : Math.round(ts*ratio);
+          tc.height = ratio>1 ? Math.round(ts/ratio) : ts;
+          tc.getContext('2d').drawImage(img, 0, 0, tc.width, tc.height);
+          item.thumb = tc.toDataURL('image/jpeg', 0.65);
+          S.images.push(item);
+          done++;
+          const pct = Math.round(done/total*100);
+          $('loadBar').style.width = pct+'%';
+          $('loadProgress').textContent = `${done} / ${total}`;
+          resolve();
+        };
+        img.onerror = () => { done++; resolve(); };
+        img.src = ev.target.result;
+      };
+      reader.readAsDataURL(file);
+    })));
+    renderGallery(); updateStats(); await sleep(10);
+  }
+  renderGallery(); updateStats();
+  showNotif('success', `✅ เพิ่ม ${files.length} รูปเรียบร้อย`);
+  if (S.currentIdx < 0 && S.images.length > 0) showPreview(0);
+}
+
+// ═══════════════════════════════════════════════════
+// GALLERY
+// ═══════════════════════════════════════════════════
+function renderGallery() {
+  const grid = $('galGrid');
+  $('galBadge').textContent = S.images.length;
+  const done = S.images.filter(i=>i.processed).length;
+  $('galStatus').textContent = done ? `(${done} เสร็จ)` : '';
+
+  if (!S.images.length) {
+    grid.innerHTML = '<div class="gal-empty">📂 ยังไม่มีรูปภาพ — ลากมาวางหรืออัพโหลดได้เลย</div>';
+    return;
+  }
+  S.images.forEach((item, idx) => {
+    let el = $('th-'+item.id);
+    if (!el) {
+      el = document.createElement('div');
+      el.className = 'thumb';
+      el.id = 'th-'+item.id;
+      el.innerHTML = `
+        <img src="${item.thumb||item.src}" loading="lazy" alt="">
+        <div class="thumb-hover-info"><span class="thumb-name">${item.name}</span></div>
+        <div class="thumb-badges"></div>
+        <div class="thumb-num">${idx+1}</div>`;
+      el.addEventListener('click', e => {
+        if (e.ctrlKey||e.metaKey) {
+          item.selected=!item.selected;
+          refreshThumb(item);
+        } else if (e.shiftKey && S.lastClickIdx !== undefined) {
+          const a=Math.min(S.lastClickIdx,idx), b=Math.max(S.lastClickIdx,idx);
+          S.images.slice(a,b+1).forEach(im => { im.selected=true; refreshThumb(im); });
+        } else {
+          showPreview(idx);
+        }
+        S.lastClickIdx = idx;
+      });
+      grid.appendChild(el);
+    }
+    refreshThumb(item);
+    el.querySelector('.thumb-num').textContent = idx+1;
+  });
+}
+
+function refreshThumb(item) {
+  const el = $('th-'+item.id);
+  if (!el) return;
+  el.classList.toggle('is-current', S.images.indexOf(item)===S.currentIdx);
+  el.classList.toggle('is-selected', item.selected);
+  el.classList.toggle('is-done', item.processed);
+  const badges = el.querySelector('.thumb-badges');
+  badges.innerHTML = '';
+  if (item.processed) badges.innerHTML += '<span class="tbadge tbadge-done">✓</span>';
+  if (item.selected) badges.innerHTML += '<span class="tbadge tbadge-sel">◼</span>';
+}
+
+function setThumbSize(sz) {
+  S.thumbSize = sz;
+  document.querySelectorAll('.sz-btn').forEach((b,i) => b.classList.toggle('active', ['sm','md','lg'][i]===sz));
+  $('galGrid').className = 'gal-grid' + (sz==='sm'?' sz-sm': sz==='lg'?' sz-lg':'');
+}
+
+function updateStats() {
+  $('statUploaded').textContent = S.images.length;
+  $('statProcessed').textContent = S.images.filter(i=>i.processed).length;
+  $('statReady').textContent = S.images.filter(i=>i.resultBlob).length;
+}
+
+// ═══════════════════════════════════════════════════
+// PREVIEW & ZOOM
+// ═══════════════════════════════════════════════════
+function showPreview(idx) {
+  if (idx<0||idx>=S.images.length) return;
+  // Deselect old current
+  if (S.currentIdx>=0 && S.images[S.currentIdx]) {
+    const old=S.images[S.currentIdx]; refreshThumb(old);
+  }
+  S.currentIdx = idx;
+  const item = S.images[idx];
+  $('previewPlaceholder').style.display = 'none';
+  $('canvasWrap').style.display = '';
+  $('ptbFilename').innerHTML = `<b>${item.name}</b>`;
+  $('ptbDims').style.display = '';
+  $('ptbDims').textContent = item.img ? `${item.img.width} × ${item.img.height}` : '';
+  $('ptbCurrent').textContent = idx+1;
+  $('ptbTotal').textContent = S.images.length;
+  // Scroll thumb into view
+  const el=$('th-'+item.id);
+  if(el) el.scrollIntoView({block:'nearest',inline:'nearest'});
+  refreshThumb(item);
+  fitZoom(false);
+  updatePreview();
+}
+
+function navigatePreview(dir) {
+  const next = S.currentIdx + dir;
+  if (next>=0 && next<S.images.length) showPreview(next);
+}
+
+// Zoom helpers
+function getWrapTransform() {
+  return `translate(calc(-50% + ${S.panX}px), calc(-50% + ${S.panY}px)) scale(${S.zoom})`;
+}
+function applyTransform() {
+  $('canvasWrap').style.transform = getWrapTransform();
+  $('ptbZoomVal').textContent = Math.round(S.zoom*100)+'%';
+}
+
+function fitZoom(animate=true) {
+  const idx = S.currentIdx;
+  if (idx<0||!S.images[idx]||!S.images[idx].img) return;
+  const item = S.images[idx];
+  const stageEl = $('previewStage');
+  const sw=stageEl.clientWidth-40, sh=stageEl.clientHeight-40;
+  const iw=item.img.width, ih=item.img.height;
+  const scale = Math.min(sw/iw, sh/ih, 1);
+  S.zoom = scale; S.panX=0; S.panY=0;
+  applyTransform();
+}
+
+function actualZoom() { S.zoom=1; S.panX=0; S.panY=0; applyTransform(); showZoomToast('100%'); }
+function resetZoom() { fitZoom(); showZoomToast('Fit'); }
+function adjustZoom(delta) {
+  S.zoom = Math.max(0.05, Math.min(10, S.zoom+delta));
+  applyTransform(); showZoomToast(Math.round(S.zoom*100)+'%');
+}
+
+let zoomToastTimer;
+function showZoomToast(msg) {
+  const t=$('zoomToast'); t.textContent=msg; t.classList.add('show');
+  clearTimeout(zoomToastTimer); zoomToastTimer=setTimeout(()=>t.classList.remove('show'), 1200);
+}
+
+function updatePreview() {
+  const idx = S.currentIdx;
+  if (idx<0||idx>=S.images.length) return;
+  const item = S.images[idx];
+  if (!item.img) return;
+
+  const canvas = $('previewCanvas');
+  const iw=item.img.width, ih=item.img.height;
+  canvas.width = iw; canvas.height = ih;
+  const ctx = canvas.getContext('2d');
+  ctx.clearRect(0,0,iw,ih);
+  ctx.drawImage(item.img,0,0,iw,ih);
+  drawWatermarkPreview(ctx,iw,ih);
+  applyTransform();
+  updateWmHandle();
+}
+
+// ═══════════════════════════════════════════════════
+// ZOOM / PAN via mouse wheel + drag
+// ═══════════════════════════════════════════════════
+stage.addEventListener('wheel', e => {
+  if (S.currentIdx<0) return;
+  e.preventDefault();
+  const delta = e.deltaY < 0 ? 0.15 : -0.15;
+  S.zoom = Math.max(0.05, Math.min(10, S.zoom+delta));
+  applyTransform();
+  showZoomToast(Math.round(S.zoom*100)+'%');
+}, { passive: false });
+
+stage.addEventListener('mousedown', e => {
+  if (e.button===1 || (e.button===0 && !e.target.closest('#wmHandle'))) {
+    S.isPanning=true; S.panStartX=e.clientX; S.panStartY=e.clientY;
+    S.panStartPX=S.panX; S.panStartPY=S.panY;
+    stage.classList.add('panning');
+    e.preventDefault();
+  }
+});
+document.addEventListener('mousemove', e => {
+  if (S.isPanning) {
+    S.panX = S.panStartPX + (e.clientX-S.panStartX);
+    S.panY = S.panStartPY + (e.clientY-S.panStartY);
+    applyTransform();
+    updateWmHandle();
+  }
+  if (S.wmDragging) {
+    const canvas=$('previewCanvas');
+    const wrap=$('canvasWrap');
+    const wRect=wrap.getBoundingClientRect();
+    // convert mouse to canvas-local coords
+    const cx = (e.clientX - wRect.left) / S.zoom;
+    const cy = (e.clientY - wRect.top) / S.zoom;
+    let xp = Math.max(0,Math.min(100, cx/canvas.width*100));
+    let yp = Math.max(0,Math.min(100, cy/canvas.height*100));
+    $('wmX').value = Math.round(xp);
+    $('wmY').value = Math.round(yp);
+    document.querySelectorAll('.pos-btn').forEach(b=>b.classList.remove('active'));
+    updatePreview();
+  }
+});
+document.addEventListener('mouseup', () => {
+  if (S.isPanning) { S.isPanning=false; stage.classList.remove('panning'); }
+  if (S.wmDragging) { S.wmDragging=false; $('wmHandle').classList.remove('dragging'); }
+});
+
+// ═══════════════════════════════════════════════════
+// WATERMARK HANDLE
+// ═══════════════════════════════════════════════════
+function updateWmHandle() {
+  const handle=$('wmHandle');
+  if (S.isTiled || S.currentIdx<0) { handle.style.display='none'; return; }
+  const canvas=$('previewCanvas');
+  if (!canvas.width) { handle.style.display='none'; return; }
+  const xp=parseFloat($('wmX').value)/100;
+  const yp=parseFloat($('wmY').value)/100;
+  handle.style.display='block';
+  handle.style.left = (xp*canvas.width)+'px';
+  handle.style.top  = (yp*canvas.height)+'px';
+}
+
+$('wmHandle').addEventListener('mousedown', e => {
+  if (e.button!==0) return;
+  S.wmDragging=true;
+  S.isPanning=false;
+  $('wmHandle').classList.add('dragging');
+  e.preventDefault(); e.stopPropagation();
+});
+
+// ═══════════════════════════════════════════════════
+// DRAW WATERMARK (preview)
+// ═══════════════════════════════════════════════════
+function drawWatermarkPreview(ctx,w,h) {
+  const opacity=$('wmOpacity').value/100;
+  const rot=$('wmRotation').value*Math.PI/180;
+  const shadow=$('wmShadow').checked;
+  const blend=$('wmBlend').checked?'multiply':'source-over';
+  ctx.save();
+  ctx.globalAlpha=opacity;
+  ctx.globalCompositeOperation=blend;
+  if(shadow){ctx.shadowColor='rgba(0,0,0,0.55)';ctx.shadowBlur=10;ctx.shadowOffsetX=3;ctx.shadowOffsetY=3;}
+  if(S.isTiled) drawTiledPreview(ctx,w,h,rot);
+  else {
+    const x=w*parseFloat($('wmX').value)/100;
+    const y=h*parseFloat($('wmY').value)/100;
+    ctx.translate(x,y); ctx.rotate(rot);
+    drawWmContent(ctx,w,h,1,0,0);
+    ctx.setTransform(1,0,0,1,0,0);
+  }
+  ctx.restore();
+}
+
+function drawWmContent(ctx,imgW,imgH,scale,cx,cy) {
+  if(S.wmType==='text'||S.wmType==='both') drawTextWm(ctx,imgW,imgH,scale,cx,cy);
+  if((S.wmType==='image'||S.wmType==='both')&&S.wmImgEl) drawImgWm(ctx,imgW,imgH,scale,cx,cy);
+}
+
+function drawTextWm(ctx,imgW,imgH,scale,cx,cy) {
+  const text=$('wmText').value; if(!text) return;
+  const fs=$('wmFontSize').value*scale;
+  const font=$('wmFont').value;
+  const color=$('wmColor').value;
+  const sc=$('wmStrokeColor').value;
+  const sw=$('wmStrokeWidth').value*scale;
+  const bold=S.fontStyles.bold?'bold ':'';
+  const italic=S.fontStyles.italic?'italic ':'';
+  ctx.font=`${italic}${bold}${fs}px "${font}"`;
+  ctx.textAlign='center'; ctx.textBaseline='middle';
+  const lines=text.split('\n'), lh=fs*1.3;
+  const startY=cy-(lines.length-1)*lh/2;
+  lines.forEach((line,i)=>{
+    const ly=startY+i*lh;
+    if(sw>0){ctx.strokeStyle=sc;ctx.lineWidth=sw;ctx.lineJoin='round';ctx.strokeText(line,cx,ly);}
+    ctx.fillStyle=color; ctx.fillText(line,cx,ly);
+    if(S.fontStyles.underline){const tw=ctx.measureText(line).width;ctx.fillRect(cx-tw/2,ly+fs*0.5,tw,Math.max(1,fs*0.08));}
+  });
+}
+function drawImgWm(ctx,imgW,imgH,scale,cx,cy) {
+  if(!S.wmImgEl) return;
+  const dw=imgW*($('wmImgSize').value/100);
+  const r=S.wmImgEl.width/S.wmImgEl.height;
+  ctx.drawImage(S.wmImgEl,cx-dw/2,cy-dw/r/2,dw,dw/r);
+}
+function drawTiledPreview(ctx,w,h,rot) {
+  const sp=parseInt($('wmTileSpacing').value);
+  const text=$('wmText').value||'WM';
+  const fs=parseInt($('wmFontSize').value);
+  const wmW=text.length*fs*0.6+sp+20;
+  const wmH=fs*1.3+sp;
+  const cols=Math.ceil(w/wmW)+2, rows=Math.ceil(h/wmH)+2;
+  for(let r=-1;r<rows;r++) for(let c=-1;c<cols;c++){
+    const x=c*wmW+(r%2===0?0:wmW/2), y=r*wmH;
+    ctx.save(); ctx.translate(x,y); ctx.rotate(rot);
+    drawWmContent(ctx,w,h,1,0,0); ctx.restore();
+  }
+}
+
+// ═══════════════════════════════════════════════════
+// WM TYPE / POSITION
+// ═══════════════════════════════════════════════════
+function setWmType(t) {
+  S.wmType=t;
+  document.querySelectorAll('.type-btn').forEach(b=>b.classList.remove('active'));
+  $('type'+t[0].toUpperCase()+t.slice(1)).classList.add('active');
+  $('textWmSection').style.display=(t==='text'||t==='both')?'block':'none';
+  $('imageWmSection').style.display=(t==='image'||t==='both')?'block':'none';
+  updatePreview();
+}
+function loadWmImage(input) {
+  const file=input.files[0]; if(!file) return;
+  const reader=new FileReader();
+  reader.onload=ev=>{
+    const img=new Image();
+    img.onload=()=>{S.wmImgEl=img;$('wmImgName').textContent=file.name;$('wmImgPreview').src=ev.target.result;$('wmImgPreviewBox').style.display='block';updatePreview();};
+    img.src=ev.target.result;
+  };
+  reader.readAsDataURL(file);
+}
+function setPosition(pos) {
+  document.querySelectorAll('.pos-btn').forEach(b=>b.classList.remove('active'));
+  document.querySelector(`[data-pos="${pos}"]`)?.classList.add('active');
+  const m={'top-left':[5,5],'top-center':[50,5],'top-right':[95,5],'middle-left':[5,50],'center':[50,50],'middle-right':[95,50],'bottom-left':[5,95],'bottom-center':[50,95],'bottom-right':[95,95]};
+  if(m[pos]){$('wmX').value=m[pos][0];$('wmY').value=m[pos][1];updatePreview();}
+}
+function toggleTiled() {
+  S.isTiled=$('wmTiled').checked;
+  $('tiledOptions').classList.toggle('show',S.isTiled);
+  $('posGridSection').style.display=S.isTiled?'none':'block';
+  $('wmHandle').style.display=S.isTiled?'none':'';
+  updatePreview();
+}
+function toggleStyle(s) {
+  S.fontStyles[s]=!S.fontStyles[s];
+  $({'bold':'fsBold','italic':'fsItalic','underline':'fsUnderline'}[s]).classList.toggle('active',S.fontStyles[s]);
+  updatePreview();
+}
+function syncColorFromHex() {
+  const v=$('wmColorHex').value;
+  if(/^#[0-9a-f]{6}$/i.test(v)){$('wmColor').value=v;updatePreview();}
+}
+$('wmColor').addEventListener('input',function(){$('wmColorHex').value=this.value;updatePreview();});
+
+// ═══════════════════════════════════════════════════
+// GALLERY RESIZE BAR
+// ═══════════════════════════════════════════════════
+(function(){
+  const bar=$('galResizeBar'), strip=$('galleryStrip');
+  let dragging=false, startY=0, startH=0;
+  bar.addEventListener('mousedown',e=>{
+    dragging=true; startY=e.clientY; startH=strip.offsetHeight;
+    bar.classList.add('active'); e.preventDefault();
+  });
+  document.addEventListener('mousemove',e=>{
+    if(!dragging) return;
+    const newH=startH-(e.clientY-startY);
+    strip.style.height=Math.max(90,Math.min(window.innerHeight*0.55,newH))+'px';
+  });
+  document.addEventListener('mouseup',()=>{if(dragging){dragging=false;bar.classList.remove('active');}});
+})();
+
+// ═══════════════════════════════════════════════════
+// SELECTION
+// ═══════════════════════════════════════════════════
+function selectAllThumbs(){S.images.forEach(i=>{i.selected=true;refreshThumb(i);});}
+function deselectAll(){S.images.forEach(i=>{i.selected=false;refreshThumb(i);});}
+function toggleSelectProcessed(){S.images.filter(i=>i.processed).forEach(i=>{i.selected=true;refreshThumb(i);});}
+function removeSelected(){
+  const sel=S.images.filter(i=>i.selected);
+  if(!sel.length){showNotif('warning','ยังไม่ได้เลือกรูปใด');return;}
+  sel.forEach(i=>{$('th-'+i.id)?.remove();});
+  S.images=S.images.filter(i=>!i.selected);
+  if(S.currentIdx>=S.images.length) S.currentIdx=S.images.length-1;
+  updateStats(); renderGallery();
+  showNotif('success',`ลบ ${sel.length} รูป`);
+}
+function clearAll(){
+  S.images=[]; S.currentIdx=-1;
+  $('galGrid').innerHTML='';
+  $('canvasWrap').style.display='none';
+  $('previewPlaceholder').style.display='';
+  $('wmHandle').style.display='none';
+  $('ptbFilename').innerHTML='— ยังไม่ได้เลือกภาพ —';
+  $('ptbDims').style.display='none';
+  $('ptbCurrent').textContent='—'; $('ptbTotal').textContent='0';
+  updateStats();
+}
+
+// ═══════════════════════════════════════════════════
+// SORT
+// ═══════════════════════════════════════════════════
+function sortImages(){
+  const o=$('sortOrder').value;
+  S.images.sort((a,b)=>o==='name'?a.name.localeCompare(b.name):o==='name-desc'?b.name.localeCompare(a.name):o==='size'?a.file.size-b.file.size:o==='size-desc'?b.file.size-a.file.size:b.file.lastModified-a.file.lastModified);
+  $('galGrid').innerHTML=''; renderGallery();
+}
+
+// ═══════════════════════════════════════════════════
+// APPLY WATERMARK
+// ═══════════════════════════════════════════════════
+function captureSettings(){
+  return {
+    type:S.wmType, text:$('wmText').value, font:$('wmFont').value,
+    fontSize:+$('wmFontSize').value, color:$('wmColor').value,
+    strokeColor:$('wmStrokeColor').value, strokeWidth:+$('wmStrokeWidth').value,
+    opacity:$('wmOpacity').value/100, rotation:$('wmRotation').value*Math.PI/180,
+    xPct:parseFloat($('wmX').value)/100, yPct:parseFloat($('wmY').value)/100,
+    tiled:S.isTiled, tileSpacing:+$('wmTileSpacing').value,
+    shadow:$('wmShadow').checked, blend:$('wmBlend').checked,
+    bold:S.fontStyles.bold, italic:S.fontStyles.italic, underline:S.fontStyles.underline,
+    wmImgEl:S.wmImgEl, wmImgSizePct:$('wmImgSize').value/100,
+    format:$('exportFormat').value, quality:$('exportQuality').value/100,
+    prefix:$('filePrefix').value, keepFilename:$('keepFilename').checked,
+    resize:$('resizeOutput').checked, resizeW:+$('resizeW').value, resizeH:+$('resizeH').value, keepAspect:$('keepAspect').checked,
+  };
+}
+
+function applyToSelected(){
+  const sel=S.images.filter(i=>i.selected);
+  if(!sel.length){showNotif('warning','เลือกรูปก่อน (Ctrl+คลิก หรือ Shift+คลิก)');return;}
+  processImages(sel);
+}
+function applyToAll(){
+  if(!S.images.length){showNotif('warning','ยังไม่มีรูปภาพ');return;}
+  processImages(S.images);
+}
+async function processCurrentAndRefresh(){
+  if(S.currentIdx<0){showNotif('warning','เลือกรูปก่อน');return;}
+  const item=S.images[S.currentIdx];
+  await applyWatermarkToItem(item,captureSettings());
+  refreshThumb(item); updateStats();
+  showNotif('success','✅ ใส่ลายน้ำสำเร็จ');
+}
+
+async function processImages(items){
+  S.cancelFlag=false;
+  const s=captureSettings(), total=items.length;
+  let done=0;
+  const t0=Date.now();
+  $('processLabel').textContent='กำลังประมวลผล...';
+  $('processCount').textContent=`0 / ${total}`;
+  $('processBar').style.width='0%';
+  $('cancelBtn').style.display='';
+  switchTab('export');
+  const BATCH=20;
+  for(let i=0;i<items.length;i+=BATCH){
+    if(S.cancelFlag) break;
+    const batch=items.slice(i,Math.min(i+BATCH,items.length));
+    await Promise.all(batch.map(item=>applyWatermarkToItem(item,s)));
+    done=Math.min(i+BATCH,items.length);
+    const pct=Math.round(done/total*100);
+    $('processBar').style.width=pct+'%';
+    $('processCount').textContent=`${done} / ${total}`;
+    const elapsed=(Date.now()-t0)/1000;
+    const rate=done/elapsed;
+    $('processRate').textContent=`${Math.round(rate)} รูป/วินาที • เหลือ ~${Math.ceil((total-done)/Math.max(rate,0.1))} วินาที`;
+    await sleep(10);
+  }
+  updateStats(); renderGallery();
+  $('cancelBtn').style.display='none';
+  $('processLabel').textContent='เสร็จแล้ว';
+  showNotif('success',`✅ ใส่ลายน้ำ ${done} รูปเรียบร้อย`);
+}
+
+async function applyWatermarkToItem(item,s){
+  return new Promise(resolve=>{
+    if(!item.img){resolve();return;}
+    const c=document.createElement('canvas');
+    let w=item.img.width, h=item.img.height;
+    if(s.resize){
+      if(s.keepAspect){const r=w/h;if(s.resizeW&&s.resizeH){if(w/h>s.resizeW/s.resizeH){w=s.resizeW;h=Math.round(w/r);}else{h=s.resizeH;w=Math.round(h*r);}}else if(s.resizeW){w=s.resizeW;h=Math.round(w/r);}else if(s.resizeH){h=s.resizeH;w=Math.round(h*r);}}
+      else{w=s.resizeW||w;h=s.resizeH||h;}
+    }
+    c.width=w; c.height=h;
+    const ctx=c.getContext('2d');
+    ctx.drawImage(item.img,0,0,w,h);
+    ctx.save();
+    ctx.globalAlpha=s.opacity;
+    ctx.globalCompositeOperation=s.blend?'multiply':'source-over';
+    if(s.shadow){ctx.shadowColor='rgba(0,0,0,0.55)';ctx.shadowBlur=10;ctx.shadowOffsetX=3;ctx.shadowOffsetY=3;}
+    if(s.tiled) drawTiledFull(ctx,w,h,s);
+    else{ctx.translate(w*s.xPct,h*s.yPct);ctx.rotate(s.rotation);drawWmFull(ctx,w,h,s,0,0);ctx.setTransform(1,0,0,1,0,0);}
+    ctx.restore();
+    c.toBlob(blob=>{item.resultBlob=blob;item.processed=true;resolve();},'image/'+s.format,s.quality);
+  });
+}
+function drawWmFull(ctx,w,h,s,cx,cy){
+  if(s.type==='text'||s.type==='both'){
+    if(!s.text) return;
+    const bold=s.bold?'bold ':'', italic=s.italic?'italic ':'';
+    ctx.font=`${italic}${bold}${s.fontSize}px "${s.font}"`;
+    ctx.textAlign='center'; ctx.textBaseline='middle';
+    const lines=s.text.split('\n'), lh=s.fontSize*1.3;
+    const startY=cy-(lines.length-1)*lh/2;
+    lines.forEach((line,i)=>{
+      const ly=startY+i*lh;
+      if(s.strokeWidth>0){ctx.strokeStyle=s.strokeColor;ctx.lineWidth=s.strokeWidth;ctx.lineJoin='round';ctx.strokeText(line,cx,ly);}
+      ctx.fillStyle=s.color; ctx.fillText(line,cx,ly);
+      if(s.underline){const tw=ctx.measureText(line).width;ctx.fillRect(cx-tw/2,ly+s.fontSize*0.5,tw,Math.max(1,s.fontSize*0.08));}
+    });
+  }
+  if((s.type==='image'||s.type==='both')&&s.wmImgEl){
+    const dw=w*s.wmImgSizePct, r=s.wmImgEl.width/s.wmImgEl.height;
+    ctx.drawImage(s.wmImgEl,cx-dw/2,cy-dw/r/2,dw,dw/r);
+  }
+}
+function drawTiledFull(ctx,w,h,s){
+  const baseW=s.type==='image'&&s.wmImgEl?w*s.wmImgSizePct:s.fontSize*(s.text||'WM').split('\n').reduce((m,l)=>Math.max(m,l.length),0)*0.6+20;
+  const wmW=baseW+s.tileSpacing, wmH=s.fontSize*1.3+s.tileSpacing;
+  const cols=Math.ceil(w/wmW)+2, rows=Math.ceil(h/wmH)+2;
+  for(let r=-1;r<rows;r++) for(let c=-1;c<cols;c++){
+    const x=c*wmW+(r%2===0?0:wmW/2), y=r*wmH;
+    ctx.save();ctx.translate(x,y);ctx.rotate(s.rotation);drawWmFull(ctx,w,h,s,0,0);ctx.restore();
+  }
+}
+function cancelProcess(){S.cancelFlag=true;$('cancelBtn').style.display='none';showNotif('warning','หยุดการประมวลผล');}
+
+// ═══════════════════════════════════════════════════
+// DOWNLOAD
+// ═══════════════════════════════════════════════════
+async function processAndDownload(){
+  const items=S.images;
+  if(!items.length){showNotif('warning','ไม่มีรูปภาพ');return;}
+  const notDone=items.filter(i=>!i.resultBlob);
+  if(notDone.length){showNotif('info',`กำลังประมวลผล ${notDone.length} รูปก่อนดาวน์โหลด...`);await processImages(notDone);}
+  $('downloadBtn').disabled=true;
+  $('processLabel').textContent='กำลังสร้าง ZIP...';
+  const zip=new JSZip();
+  const s=captureSettings();
+  const folder=zip.folder($('folderName').value||'watermarked');
+  let count=0;
+  for(const item of items){
+    if(!item.resultBlob) continue;
+    let fname=s.keepFilename?item.name.replace(/\.[^.]+$/,''):`img_${String(count+1).padStart(5,'0')}`;
+    fname=s.prefix+fname+'.'+s.format;
+    folder.file(fname,item.resultBlob); count++;
+    if(count%100===0){$('processLabel').textContent=`เพิ่มใน ZIP: ${count} / ${items.length}`;await sleep(5);}
+  }
+  $('processLabel').textContent='กำลังบีบอัด ZIP...';
+  await sleep(50);
+  const blob=await zip.generateAsync({type:'blob',compression:'DEFLATE',compressionOptions:{level:1}},m=>{
+    $('processBar').style.width=m.percent.toFixed(0)+'%';
+    $('processCount').textContent=m.percent.toFixed(0)+'%';
+  });
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement('a'); a.href=url; a.download=`watermarked_${Date.now()}.zip`; a.click();
+  URL.revokeObjectURL(url);
+  $('downloadBtn').disabled=false;
+  $('processLabel').textContent='ดาวน์โหลดเสร็จแล้ว';
+  showNotif('success',`✅ ดาวน์โหลด ZIP ${count} รูปเรียบร้อย`);
+}
+
+async function downloadSingle(){
+  if(S.currentIdx<0){showNotif('warning','เลือกรูปก่อน');return;}
+  const item=S.images[S.currentIdx];
+  if(!item.resultBlob){await applyWatermarkToItem(item,captureSettings());updateStats();}
+  const s=captureSettings();
+  const url=URL.createObjectURL(item.resultBlob);
+  const a=document.createElement('a'); a.href=url; a.download=s.prefix+item.name.replace(/\.[^.]+$/,'')+'.'+s.format; a.click();
+  URL.revokeObjectURL(url);
+}
+
+function toggleResize(){$('resizeOptions').style.display=$('resizeOutput').checked?'block':'none';}
+
+// ═══════════════════════════════════════════════════
+// NOTIFICATIONS
+// ═══════════════════════════════════════════════════
+function showNotif(type,msg){
+  const box=$('notifications');
+  const el=document.createElement('div');
+  el.className=`notif ${type}`;
+  el.innerHTML=`<span>${{success:'✅',error:'❌',warning:'⚠️',info:'ℹ️'}[type]||''}</span><span>${msg}</span>`;
+  box.appendChild(el);
+  setTimeout(()=>{el.style.opacity='0';el.style.transform='translateX(110%)';el.style.transition='all 0.3s';setTimeout(()=>el.remove(),350);},3500);
+}
+
+// ═══════════════════════════════════════════════════
+// KEYBOARD
+// ═══════════════════════════════════════════════════
+document.addEventListener('keydown',e=>{
+  if(e.target.tagName==='INPUT'||e.target.tagName==='TEXTAREA') return;
+  if(e.key==='ArrowRight'||e.key==='d') navigatePreview(1);
+  if(e.key==='ArrowLeft'||e.key==='a') navigatePreview(-1);
+  if(e.key==='Delete'&&!e.ctrlKey) removeSelected();
+  if(e.ctrlKey&&e.key==='a'){e.preventDefault();selectAllThumbs();}
+  if(e.key==='='||e.key==='+') adjustZoom(0.15);
+  if(e.key==='-') adjustZoom(-0.15);
+  if(e.key==='0') fitZoom();
+});
+
+window.addEventListener('resize',()=>{if(S.currentIdx>=0) fitZoom();});
+
+// ─── INIT ────────────────────────────────────────
+showNotif('info','👋 ยินดีต้อนรับ — อัพโหลดรูปเพื่อเริ่มต้น');
+</script>
+</body>
+</html>
