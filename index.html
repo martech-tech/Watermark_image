@@ -995,6 +995,37 @@ input[type=color] { width: 40px; height: 34px; border: 1px solid var(--border); 
         <b style="color:var(--warning)">⚡ ประสิทธิภาพสูง</b><br>
         ประมวลผลแบบ batch — รองรับ 10,000+ รูปโดยไม่ค้าง
       </div>
+
+      <!-- ── BACKEND API ─────────────────────────── -->
+      <div class="section" style="margin-top:18px">
+        <div class="section-title">Backend API (Server Mode)</div>
+        <div style="padding:11px;background:var(--surface3);border-radius:10px;border:1px solid var(--border2)">
+          <div class="check-row" style="margin-bottom:10px">
+            <input type="checkbox" id="useBackendApi" onchange="toggleBackendApi()">
+            <span style="font-size:0.83rem;font-weight:700">ใช้ Backend API</span>
+          </div>
+          <div id="backendApiOpts" style="display:none">
+            <label>URL ของ API Server</label>
+            <input type="text" id="apiBaseUrl" value="http://localhost:8000" placeholder="http://localhost:8000">
+            <button class="btn btn-secondary" style="width:100%;margin-top:7px;font-size:0.78rem" onclick="checkApiHealth()">
+              🔌 ทดสอบการเชื่อมต่อ
+            </button>
+            <div id="apiHealthStatus" style="font-size:0.72rem;margin-top:6px;color:var(--text-muted)"></div>
+            <div style="margin-top:9px;padding:8px 10px;background:rgba(66,133,244,0.07);border:1px solid rgba(66,133,244,0.18);border-radius:8px;font-size:0.71rem;color:var(--text-muted);line-height:1.6">
+              <b style="color:#4285f4">วิธีเริ่ม Backend:</b><br>
+              <code style="font-size:0.69rem">cd backend</code><br>
+              <code style="font-size:0.69rem">pip install -r requirements.txt</code><br>
+              <code style="font-size:0.69rem">uvicorn main:app --port 8000</code>
+            </div>
+            <button class="btn btn-success btn-full" style="margin-top:10px" onclick="processAndDownloadViaApi()">
+              🖥️ ประมวลผลผ่าน Server &amp; ดาวน์โหลด ZIP
+            </button>
+            <button class="btn btn-secondary btn-full" style="margin-top:7px" onclick="downloadSingleViaApi()">
+              📄 ดาวน์โหลดภาพปัจจุบัน (Server)
+            </button>
+          </div>
+        </div>
+      </div>
     </div>
   </aside>
 
@@ -2233,6 +2264,201 @@ async function importGdriveFolder() {
 function cancelFolderImport() {
   GD.cancelFlag = true;
   flog('cancel', 'warn', '⚠', 'กำลังหยุด…');
+}
+
+// ═══════════════════════════════════════════════════
+// BACKEND API MODE
+// ═══════════════════════════════════════════════════
+function toggleBackendApi() {
+  $('backendApiOpts').style.display = $('useBackendApi').checked ? 'block' : 'none';
+}
+
+async function checkApiHealth() {
+  const base = ($('apiBaseUrl').value || 'http://localhost:8000').replace(/\/$/, '');
+  const el = $('apiHealthStatus');
+  el.textContent = '🔄 กำลังตรวจสอบ…';
+  el.style.color = 'var(--text-muted)';
+  try {
+    const res = await fetch(`${base}/health`, { signal: AbortSignal.timeout(5000) });
+    const data = await res.json();
+    if (data.status === 'ok') {
+      el.textContent = '✅ เชื่อมต่อสำเร็จ — Server พร้อมใช้งาน';
+      el.style.color = 'var(--success)';
+    } else {
+      el.textContent = '⚠️ Server ตอบกลับแต่สถานะผิดปกติ';
+      el.style.color = 'var(--warning)';
+    }
+  } catch (e) {
+    el.textContent = '❌ เชื่อมต่อไม่ได้ — ตรวจสอบว่า Server กำลังทำงาน';
+    el.style.color = 'var(--danger)';
+  }
+}
+
+function _buildApiFormData(item) {
+  const fd = new FormData();
+  const s = captureSettings();
+
+  // source image
+  fd.append('image', item.file, item.name);
+
+  // watermark image if any
+  if (s.wmImgEl && (s.type === 'image' || s.type === 'both')) {
+    // convert wmImgEl to blob
+    const wc = document.createElement('canvas');
+    wc.width = s.wmImgEl.width; wc.height = s.wmImgEl.height;
+    wc.getContext('2d').drawImage(s.wmImgEl, 0, 0);
+    // will be sent async — attach canvas data URL as blob below
+    fd.append('_wm_canvas_data', wc.toDataURL('image/png'));
+  }
+
+  fd.append('wm_type',      s.type);
+  fd.append('text',         s.text || '');
+  fd.append('font_name',    s.font);
+  fd.append('font_size',    s.fontSize);
+  fd.append('color',        s.color);
+  fd.append('stroke_color', s.strokeColor);
+  fd.append('stroke_width', s.strokeWidth);
+  fd.append('bold',         s.bold);
+  fd.append('italic',       s.italic);
+  fd.append('underline',    s.underline || false);
+  fd.append('opacity',      s.opacity);
+  fd.append('rotation',     s.rotation * 180 / Math.PI);
+  fd.append('x_pct',        s.xPct * 100);
+  fd.append('y_pct',        s.yPct * 100);
+  fd.append('tiled',        s.tiled);
+  fd.append('tile_spacing', s.tileSpacing);
+  fd.append('shadow',       s.shadow);
+  fd.append('multiply',     s.blend);
+  fd.append('out_format',   s.format);
+  fd.append('quality',      Math.round(s.quality * 100));
+  fd.append('filename_prefix', s.prefix);
+  if (s.resize) {
+    if (s.resizeW) fd.append('resize_w', s.resizeW);
+    if (s.resizeH) fd.append('resize_h', s.resizeH);
+    fd.append('keep_aspect', s.keepAspect);
+  }
+  return fd;
+}
+
+async function _attachWmImageToFd(fd) {
+  const canvasData = fd.get('_wm_canvas_data');
+  fd.delete('_wm_canvas_data');
+  if (!canvasData) return;
+  const res = await fetch(canvasData);
+  const blob = await res.blob();
+  fd.append('wm_image', blob, 'watermark.png');
+}
+
+async function downloadSingleViaApi() {
+  if (S.currentIdx < 0) { showNotif('warning', 'เลือกรูปก่อน'); return; }
+  const base = ($('apiBaseUrl').value || 'http://localhost:8000').replace(/\/$/, '');
+  const item = S.images[S.currentIdx];
+
+  showNotif('info', '🖥️ กำลังส่งไปประมวลผลที่ Server…');
+  try {
+    const fd = _buildApiFormData(item);
+    await _attachWmImageToFd(fd);
+    const res = await fetch(`${base}/api/watermark`, { method: 'POST', body: fd });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ detail: res.statusText }));
+      throw new Error(err.detail || res.statusText);
+    }
+    const blob = await res.blob();
+    const s = captureSettings();
+    const ext = s.format === 'jpeg' ? 'jpg' : s.format;
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = s.prefix + item.name.replace(/\.[^.]+$/, '') + '.' + ext;
+    a.click();
+    URL.revokeObjectURL(url);
+    showNotif('success', '✅ ดาวน์โหลดจาก Server สำเร็จ');
+  } catch (e) {
+    showNotif('error', '❌ ' + e.message);
+  }
+}
+
+async function processAndDownloadViaApi() {
+  if (!S.images.length) { showNotif('warning', 'ไม่มีรูปภาพ'); return; }
+  const base = ($('apiBaseUrl').value || 'http://localhost:8000').replace(/\/$/, '');
+
+  const total = S.images.length;
+  $('processLabel').textContent = 'กำลังส่งไปประมวลผลที่ Server…';
+  $('processCount').textContent = `0 / ${total}`;
+  $('processBar').style.width = '0%';
+  switchTab('export');
+
+  try {
+    // Build multipart with all images
+    const fd = new FormData();
+    const s = captureSettings();
+    for (const item of S.images) {
+      fd.append('images', item.file, item.name);
+    }
+    // wm image
+    if (s.wmImgEl && (s.type === 'image' || s.type === 'both')) {
+      const wc = document.createElement('canvas');
+      wc.width = s.wmImgEl.width; wc.height = s.wmImgEl.height;
+      wc.getContext('2d').drawImage(s.wmImgEl, 0, 0);
+      const wmBlob = await (await fetch(wc.toDataURL('image/png'))).blob();
+      fd.append('wm_image', wmBlob, 'watermark.png');
+    }
+    fd.append('wm_type',      s.type);
+    fd.append('text',         s.text || '');
+    fd.append('font_name',    s.font);
+    fd.append('font_size',    s.fontSize);
+    fd.append('color',        s.color);
+    fd.append('stroke_color', s.strokeColor);
+    fd.append('stroke_width', s.strokeWidth);
+    fd.append('bold',         s.bold);
+    fd.append('italic',       s.italic);
+    fd.append('underline',    s.underline || false);
+    fd.append('opacity',      s.opacity);
+    fd.append('rotation',     s.rotation * 180 / Math.PI);
+    fd.append('x_pct',        s.xPct * 100);
+    fd.append('y_pct',        s.yPct * 100);
+    fd.append('tiled',        s.tiled);
+    fd.append('tile_spacing', s.tileSpacing);
+    fd.append('shadow',       s.shadow);
+    fd.append('multiply',     s.blend);
+    fd.append('out_format',   s.format);
+    fd.append('quality',      Math.round(s.quality * 100));
+    fd.append('filename_prefix', s.prefix);
+    fd.append('zip_folder',   $('folderName').value || 'watermarked');
+    if (s.resize) {
+      if (s.resizeW) fd.append('resize_w', s.resizeW);
+      if (s.resizeH) fd.append('resize_h', s.resizeH);
+      fd.append('keep_aspect', s.keepAspect);
+    }
+
+    $('processLabel').textContent = `กำลังอัพโหลด ${total} รูปไปยัง Server…`;
+    $('processBar').style.width = '30%';
+
+    const res = await fetch(`${base}/api/watermark/batch`, { method: 'POST', body: fd });
+    $('processBar').style.width = '80%';
+
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ detail: res.statusText }));
+      throw new Error(err.detail || res.statusText);
+    }
+
+    const blob = await res.blob();
+    $('processBar').style.width = '100%';
+    const okCount = res.headers.get('X-Processed') || total;
+    const errCount = res.headers.get('X-Errors') || 0;
+
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = `watermarked_${Date.now()}.zip`; a.click();
+    URL.revokeObjectURL(url);
+
+    $('processLabel').textContent = 'Server ประมวลผลเสร็จแล้ว';
+    showNotif('success', `✅ Server ประมวลผล ${okCount} รูป${errCount > 0 ? ` (ล้มเหลว ${errCount})` : ''}`);
+  } catch (e) {
+    $('processLabel').textContent = 'เกิดข้อผิดพลาด';
+    $('processBar').style.width = '0%';
+    showNotif('error', '❌ ' + e.message);
+  }
 }
 
 // ─── INIT ────────────────────────────────────────
