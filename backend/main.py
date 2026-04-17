@@ -1,40 +1,59 @@
 """
 WaterMark Pro — Backend API
-FastAPI + Pillow  |  Python 3.9+
+FastAPI + Pillow + Google Drive API v3
 
 Run:
     pip install -r requirements.txt
     uvicorn main:app --reload --port 8000
 
+Config (optional .env file or environment variables):
+    GOOGLE_API_KEY=AIzaSy…      # Drive API key (server-side, never exposed to browser)
+    ALLOWED_ORIGINS=*           # CORS origins
+
 Endpoints:
-    GET  /              — API info
-    GET  /health        — health check
-    POST /api/watermark          — single image → returns watermarked image
-    POST /api/watermark/batch    — multiple images → returns ZIP
+    GET  /                              — API info
+    GET  /health                        — health check
+    GET  /api/drive/status              — check if Drive API key is configured
+    POST /api/drive/list-folder         — list images in a Drive folder
+    POST /api/drive/watermark-folder    — download folder → watermark → ZIP
+    POST /api/drive/watermark-files     — download file list → watermark → ZIP
+    POST /api/watermark                 — single image → watermarked image
+    POST /api/watermark/batch           — multiple images → ZIP
 """
 
 import io
 import math
 import os
 import zipfile
-from typing import Optional
+import asyncio
+import httpx
+from typing import Optional, List
+from dotenv import load_dotenv
 
-from fastapi import FastAPI, File, Form, HTTPException, UploadFile
+from fastapi import FastAPI, File, Form, HTTPException, Header, UploadFile, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, StreamingResponse
 from PIL import Image, ImageDraw, ImageFont
 
+load_dotenv()
+
+# ─────────────────────────────────────────────────────────────
+# Config
+# ─────────────────────────────────────────────────────────────
+GOOGLE_API_KEY   = os.getenv("GOOGLE_API_KEY", "")
+ALLOWED_ORIGINS  = os.getenv("ALLOWED_ORIGINS", "*").split(",")
+DRIVE_API_BASE   = "https://www.googleapis.com/drive/v3"
+DRIVE_DL_TIMEOUT = 30   # seconds per file
+DRIVE_LIST_PAGE  = 1000 # files per API page
+
+
 # ─────────────────────────────────────────────────────────────
 # App setup
 # ─────────────────────────────────────────────────────────────
-app = FastAPI(
-    title="WaterMark Pro API",
-    description="Backend image-watermarking service for WaterMark Pro",
-    version="1.0.0",
-)
+app = FastAPI(title="WaterMark Pro API", version="1.1.0")
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=ALLOWED_ORIGINS,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -43,335 +62,309 @@ app.add_middleware(
 # ─────────────────────────────────────────────────────────────
 # Font helpers
 # ─────────────────────────────────────────────────────────────
-_FONT_SEARCH_PATHS = [
-    # Windows
+_FONT_DIRS = [
     "C:/Windows/Fonts/",
-    # macOS
     "/Library/Fonts/",
     "/System/Library/Fonts/",
-    # Linux
     "/usr/share/fonts/truetype/liberation/",
     "/usr/share/fonts/truetype/dejavu/",
-    "/usr/share/fonts/truetype/freefont/",
     "/usr/share/fonts/",
 ]
-
 _FONT_ALIASES = {
-    "arial":             ["arial.ttf", "Arial.ttf", "LiberationSans-Regular.ttf", "DejaVuSans.ttf"],
-    "arial black":       ["ariblk.ttf", "ArialBlack.ttf"],
-    "georgia":           ["georgia.ttf", "Georgia.ttf"],
-    "times new roman":   ["times.ttf", "Times New Roman.ttf", "LiberationSerif-Regular.ttf"],
-    "courier new":       ["cour.ttf", "Courier New.ttf", "LiberationMono-Regular.ttf"],
-    "verdana":           ["verdana.ttf", "Verdana.ttf"],
-    "impact":            ["impact.ttf", "Impact.ttf"],
-    "trebuchet ms":      ["trebuc.ttf"],
-    "comic sans ms":     ["comic.ttf"],
+    "arial":           ["arial.ttf", "Arial.ttf", "LiberationSans-Regular.ttf", "DejaVuSans.ttf"],
+    "arial black":     ["ariblk.ttf"],
+    "georgia":         ["georgia.ttf"],
+    "times new roman": ["times.ttf", "LiberationSerif-Regular.ttf"],
+    "courier new":     ["cour.ttf", "LiberationMono-Regular.ttf"],
+    "verdana":         ["verdana.ttf"],
+    "impact":          ["impact.ttf"],
+    "trebuchet ms":    ["trebuc.ttf"],
+    "comic sans ms":   ["comic.ttf"],
 }
 
 
-def _load_font(name: str, size: int, bold: bool = False, italic: bool = False) -> ImageFont.FreeTypeFont:
-    key = name.lower().strip()
-    candidates = _FONT_ALIASES.get(key, [name + ".ttf", name])
-
-    for base_dir in _FONT_SEARCH_PATHS:
-        for fname in candidates:
-            path = os.path.join(base_dir, fname)
-            if os.path.exists(path):
+def _load_font(name: str, size: int) -> ImageFont.FreeTypeFont:
+    candidates = _FONT_ALIASES.get(name.lower().strip(), [name + ".ttf"])
+    for d in _FONT_DIRS:
+        for f in candidates:
+            p = os.path.join(d, f)
+            if os.path.exists(p):
                 try:
-                    return ImageFont.truetype(path, size)
+                    return ImageFont.truetype(p, size)
                 except Exception:
                     pass
-
-    # Final fallback — PIL default (no size control in older Pillow)
     try:
         return ImageFont.load_default(size=size)
     except TypeError:
         return ImageFont.load_default()
 
 
-def _hex_to_rgba(hex_color: str, alpha: int = 255) -> tuple:
+def _hex_rgba(hex_color: str, alpha: int = 255) -> tuple:
     h = hex_color.lstrip("#")
     if len(h) == 3:
         h = "".join(c * 2 for c in h)
-    r, g, b = int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16)
-    return (r, g, b, alpha)
+    return (int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16), alpha)
 
 
 # ─────────────────────────────────────────────────────────────
-# Core watermark logic
+# Watermark engine
 # ─────────────────────────────────────────────────────────────
-def _draw_text_at(
-    layer: Image.Image,
-    cx: int,
-    cy: int,
-    text: str,
-    font: ImageFont.FreeTypeFont,
-    fill_rgba: tuple,
-    stroke_rgba: tuple,
-    stroke_width: int,
-    underline: bool,
-) -> None:
+def _draw_text(layer, cx, cy, text, font, fill, stroke_fill, stroke_w, underline):
     d = ImageDraw.Draw(layer)
-    font_size = font.size
-    line_h = int(font_size * 1.3)
+    fs = font.size
+    lh = int(fs * 1.3)
     lines = text.split("\n")
-    start_y = cy - (len(lines) * line_h) // 2
-
+    sy = cy - len(lines) * lh // 2
     for i, line in enumerate(lines):
-        ly = start_y + i * line_h
+        ly = sy + i * lh
         bbox = d.textbbox((0, 0), line, font=font)
         tw = bbox[2] - bbox[0]
         lx = cx - tw // 2
-
-        if stroke_width > 0:
-            d.text(
-                (lx, ly), line, font=font,
-                fill=stroke_rgba,
-                stroke_width=stroke_width,
-                stroke_fill=stroke_rgba,
-            )
-        d.text((lx, ly), line, font=font, fill=fill_rgba)
-
+        if stroke_w > 0:
+            d.text((lx, ly), line, font=font, fill=stroke_fill,
+                   stroke_width=stroke_w, stroke_fill=stroke_fill)
+        d.text((lx, ly), line, font=font, fill=fill)
         if underline:
-            uw = max(1, int(font_size * 0.08))
-            d.rectangle(
-                [lx, ly + int(font_size * 0.5), lx + tw, ly + int(font_size * 0.5) + uw],
-                fill=fill_rgba,
-            )
+            uw = max(1, int(fs * 0.08))
+            d.rectangle([lx, ly + int(fs * 0.5), lx + tw, ly + int(fs * 0.5) + uw], fill=fill)
 
 
-def _draw_img_at(
-    layer: Image.Image,
-    cx: int,
-    cy: int,
-    wm_img: Image.Image,
-    canvas_w: int,
-    size_pct: float,
-    opacity: float,
-) -> None:
+def _draw_img(layer, cx, cy, wm_img, canvas_w, size_pct, opacity):
     dw = int(canvas_w * size_pct)
-    if dw <= 0:
+    if dw <= 0 or not wm_img:
         return
-    ratio = wm_img.width / wm_img.height
-    dh = max(1, int(dw / ratio))
+    dh = max(1, int(dw * wm_img.height / wm_img.width))
     resized = wm_img.resize((dw, dh), Image.LANCZOS).convert("RGBA")
-
-    # Apply opacity to alpha channel
     r, g, b, a = resized.split()
     a = a.point(lambda p: int(p * opacity))
     resized.putalpha(a)
-
     layer.paste(resized, (cx - dw // 2, cy - dh // 2), resized)
 
 
 def apply_watermark(
-    img: Image.Image,
-    *,
-    wm_type: str = "text",
-    # Text settings
-    text: str = "© Copyright",
-    font_name: str = "Arial",
-    font_size: int = 36,
-    color: str = "#ffffff",
-    stroke_color: str = "#000000",
-    stroke_width: int = 2,
-    bold: bool = False,
-    italic: bool = False,
-    underline: bool = False,
-    # Image settings
-    wm_img: Optional[Image.Image] = None,
-    wm_img_size_pct: float = 0.25,
-    # Common
-    opacity: float = 0.7,
-    rotation: float = -30.0,
-    x_pct: float = 50.0,
-    y_pct: float = 50.0,
-    tiled: bool = False,
-    tile_spacing: int = 100,
-    shadow: bool = False,
-    multiply: bool = False,
-    # Output
-    out_format: str = "jpeg",
-    quality: int = 92,
-    resize_w: Optional[int] = None,
-    resize_h: Optional[int] = None,
-    keep_aspect: bool = True,
+    img: Image.Image, *,
+    wm_type="text", text="© Copyright", font_name="Arial", font_size=36,
+    color="#ffffff", stroke_color="#000000", stroke_width=2,
+    bold=False, italic=False, underline=False,
+    wm_img: Optional[Image.Image] = None, wm_img_size_pct=0.25,
+    opacity=0.7, rotation=-30.0, x_pct=50.0, y_pct=50.0,
+    tiled=False, tile_spacing=100,
+    out_format="jpeg", quality=92,
+    resize_w=None, resize_h=None, keep_aspect=True,
+    **_,
 ) -> bytes:
-    """Return watermarked image as bytes."""
-
     base = img.convert("RGBA")
     bw, bh = base.size
 
-    # Optional resize
     if resize_w or resize_h:
+        r = bw / bh
         if keep_aspect:
-            ratio = bw / bh
             if resize_w and resize_h:
-                if bw / bh > resize_w / resize_h:
-                    resize_h = int(resize_w / ratio)
-                else:
-                    resize_w = int(resize_h * ratio)
+                resize_h = int(resize_w / r) if bw / bh > resize_w / resize_h else resize_h
+                resize_w = int(resize_h * r) if bw / bh <= resize_w / resize_h else resize_w
             elif resize_w:
-                resize_h = int(resize_w / ratio)
+                resize_h = int(resize_w / r)
             else:
-                resize_w = int(resize_h * ratio)
+                resize_w = int(resize_h * r)
         base = base.resize((resize_w or bw, resize_h or bh), Image.LANCZOS)
         bw, bh = base.size
 
     alpha_val = int(opacity * 255)
-    font = _load_font(font_name, font_size, bold, italic)
-    fill_rgba = _hex_to_rgba(color, alpha_val)
-    stroke_rgba = _hex_to_rgba(stroke_color, alpha_val)
-
+    font = _load_font(font_name, font_size)
+    fill = _hex_rgba(color, alpha_val)
+    stroke_fill = _hex_rgba(stroke_color, alpha_val)
     wm_layer = Image.new("RGBA", (bw, bh), (0, 0, 0, 0))
 
-    def place_wm(layer: Image.Image, cx: int, cy: int) -> None:
+    def place(layer, cx, cy):
         if wm_type in ("text", "both") and text:
-            _draw_text_at(layer, cx, cy, text, font, fill_rgba, stroke_rgba, stroke_width, underline)
+            _draw_text(layer, cx, cy, text, font, fill, stroke_fill, stroke_width, underline)
         if wm_type in ("image", "both") and wm_img:
-            _draw_img_at(layer, cx, cy, wm_img, bw, wm_img_size_pct, opacity)
+            _draw_img(layer, cx, cy, wm_img, bw, wm_img_size_pct, opacity)
 
     if tiled:
-        max_line_len = max((len(l) for l in text.split("\n")), default=4) if text else 4
-        cell_w = max(60, int(max_line_len * font_size * 0.6 + tile_spacing + 20))
-        cell_h = int(font_size * 1.3 + tile_spacing)
-        pad = max(cell_w, cell_h)
-        cols = math.ceil(bw / cell_w) + 3
-        rows = math.ceil(bh / cell_h) + 3
-
-        for row in range(-1, rows):
-            for col in range(-1, cols):
-                cx = col * cell_w + (cell_w // 2 if row % 2 == 0 else 0)
-                cy = row * cell_h + cell_h // 2
-
+        max_len = max((len(l) for l in text.split("\n")), default=4) if text else 4
+        cw = max(60, int(max_len * font_size * 0.6 + tile_spacing + 20))
+        ch = int(font_size * 1.3 + tile_spacing)
+        pad = max(cw, ch)
+        for row in range(-1, math.ceil(bh / ch) + 3):
+            for col in range(-1, math.ceil(bw / cw) + 3):
+                cx = col * cw + (0 if row % 2 == 0 else cw // 2)
+                cy = row * ch + ch // 2
                 tile = Image.new("RGBA", (pad * 2, pad * 2), (0, 0, 0, 0))
-                place_wm(tile, pad, pad)
+                place(tile, pad, pad)
                 if rotation != 0:
                     tile = tile.rotate(-rotation, expand=False, resample=Image.BICUBIC)
-
-                ox = cx - pad
-                oy = cy - pad
-                # Clip paste region to layer bounds
-                wm_layer.paste(tile, (ox, oy), tile)
+                wm_layer.paste(tile, (cx - pad, cy - pad), tile)
     else:
-        x = int(bw * x_pct / 100)
-        y = int(bh * y_pct / 100)
-
-        # Create oversized tmp for rotation
+        x, y = int(bw * x_pct / 100), int(bh * y_pct / 100)
         size = int(math.sqrt(bw * bw + bh * bh)) + font_size * 2
         tmp = Image.new("RGBA", (size, size), (0, 0, 0, 0))
-        place_wm(tmp, size // 2, size // 2)
+        place(tmp, size // 2, size // 2)
         if rotation != 0:
             tmp = tmp.rotate(-rotation, expand=False, resample=Image.BICUBIC)
         wm_layer.paste(tmp, (x - size // 2, y - size // 2), tmp)
 
-    # Composite onto base
-    if multiply:
-        result = Image.alpha_composite(base, wm_layer)
-    else:
-        result = Image.alpha_composite(base, wm_layer)
+    result = Image.alpha_composite(base, wm_layer)
 
-    # Convert back to RGB for JPEG
     if out_format == "jpeg":
         final = Image.new("RGB", result.size, (255, 255, 255))
         final.paste(result, mask=result.split()[3])
-    elif out_format == "webp":
-        final = result
     else:
         final = result
 
     buf = io.BytesIO()
-    save_kwargs = {"format": out_format.upper().replace("JPEG", "JPEG")}
+    kw = {"format": out_format.upper()}
     if out_format in ("jpeg", "webp"):
-        save_kwargs["quality"] = quality
-    if out_format == "webp":
-        save_kwargs["method"] = 4
-    final.save(buf, **save_kwargs)
-    buf.seek(0)
-    return buf.read()
+        kw["quality"] = quality
+    final.save(buf, **kw)
+    return buf.getvalue()
 
 
 # ─────────────────────────────────────────────────────────────
-# Shared form parser
+# Watermark settings parser
 # ─────────────────────────────────────────────────────────────
-def _parse_form(
-    wm_type: str,
-    text: str,
-    font_name: str,
-    font_size: int,
-    color: str,
-    stroke_color: str,
-    stroke_width: int,
-    bold: bool,
-    italic: bool,
-    underline: bool,
-    opacity: float,
-    rotation: float,
-    x_pct: float,
-    y_pct: float,
-    tiled: bool,
-    tile_spacing: int,
-    shadow: bool,
-    multiply: bool,
-    out_format: str,
-    quality: int,
-    resize_w: Optional[int],
-    resize_h: Optional[int],
-    keep_aspect: bool,
-) -> dict:
+def _wm_settings(
+    wm_type, text, font_name, font_size, color, stroke_color, stroke_width,
+    bold, italic, underline, opacity, rotation, x_pct, y_pct,
+    tiled, tile_spacing, out_format, quality,
+    resize_w, resize_h, keep_aspect,
+):
     return dict(
-        wm_type=wm_type,
-        text=text,
-        font_name=font_name,
-        font_size=font_size,
-        color=color,
-        stroke_color=stroke_color,
-        stroke_width=stroke_width,
-        bold=bold,
-        italic=italic,
-        underline=underline,
-        opacity=opacity,
-        rotation=rotation,
-        x_pct=x_pct,
-        y_pct=y_pct,
-        tiled=tiled,
-        tile_spacing=tile_spacing,
-        shadow=shadow,
-        multiply=multiply,
-        out_format=out_format,
-        quality=quality,
-        resize_w=resize_w or None,
-        resize_h=resize_h or None,
-        keep_aspect=keep_aspect,
+        wm_type=wm_type, text=text, font_name=font_name, font_size=font_size,
+        color=color, stroke_color=stroke_color, stroke_width=stroke_width,
+        bold=bold, italic=italic, underline=underline,
+        opacity=opacity, rotation=rotation, x_pct=x_pct, y_pct=y_pct,
+        tiled=tiled, tile_spacing=tile_spacing,
+        out_format=out_format, quality=quality,
+        resize_w=resize_w or None, resize_h=resize_h or None, keep_aspect=keep_aspect,
     )
 
 
 # ─────────────────────────────────────────────────────────────
-# Routes
+# Google Drive API helpers
+# ─────────────────────────────────────────────────────────────
+def _resolve_api_key(header_key: str) -> str:
+    """Use server .env key if set, else fall back to per-request header key."""
+    return GOOGLE_API_KEY or header_key or ""
+
+
+async def drive_list_folder(
+    folder_id: str,
+    api_key: str,
+    recursive: bool = False,
+    client: httpx.AsyncClient = None,
+    depth: int = 0,
+) -> list[dict]:
+    """Return list of image file dicts from a Drive folder."""
+    if not api_key:
+        raise HTTPException(400, "ต้องระบุ Google API Key")
+
+    files = []
+    page_token = None
+
+    while True:
+        params = {
+            "q": f"'{folder_id}' in parents and trashed=false",
+            "fields": "files(id,name,mimeType),nextPageToken",
+            "pageSize": DRIVE_LIST_PAGE,
+            "key": api_key,
+        }
+        if page_token:
+            params["pageToken"] = page_token
+
+        r = await client.get(f"{DRIVE_API_BASE}/files", params=params, timeout=20)
+        data = r.json()
+
+        if "error" in data:
+            raise HTTPException(400, f"Drive API: {data['error']['message']}")
+
+        imgs = [f for f in data.get("files", []) if f["mimeType"].startswith("image/")]
+        dirs = [f for f in data.get("files", []) if f["mimeType"] == "application/vnd.google-apps.folder"]
+        files.extend(imgs)
+
+        if recursive:
+            for d in dirs:
+                sub = await drive_list_folder(d["id"], api_key, True, client, depth + 1)
+                files.extend(sub)
+
+        page_token = data.get("nextPageToken")
+        if not page_token:
+            break
+
+    return files
+
+
+async def drive_download_image(file_id: str, api_key: str, client: httpx.AsyncClient) -> bytes:
+    """Download a single Drive file by ID."""
+    url = f"{DRIVE_API_BASE}/files/{file_id}"
+    r = await client.get(
+        url,
+        params={"alt": "media", "key": api_key},
+        timeout=DRIVE_DL_TIMEOUT,
+        follow_redirects=True,
+    )
+    if r.status_code != 200:
+        raise ValueError(f"HTTP {r.status_code}")
+    return r.content
+
+
+# ─────────────────────────────────────────────────────────────
+# Routes — basic
 # ─────────────────────────────────────────────────────────────
 @app.get("/")
 def root():
     return {
-        "name": "WaterMark Pro API",
-        "version": "1.0.0",
+        "name": "WaterMark Pro API", "version": "1.1.0",
+        "drive_api_configured": bool(GOOGLE_API_KEY),
         "endpoints": {
-            "POST /api/watermark":       "Single image → returns watermarked file",
-            "POST /api/watermark/batch": "Multiple images → returns ZIP",
-            "GET  /health":              "Health check",
+            "GET  /health":                      "Health check",
+            "GET  /api/drive/status":            "Drive API key status",
+            "POST /api/drive/list-folder":       "List images in Drive folder",
+            "POST /api/drive/watermark-folder":  "Drive folder → watermark → ZIP",
+            "POST /api/drive/watermark-files":   "Drive file IDs → watermark → ZIP",
+            "POST /api/watermark":               "Single image → watermarked file",
+            "POST /api/watermark/batch":         "Multiple images → ZIP",
         },
     }
 
 
 @app.get("/health")
 def health():
-    return {"status": "ok"}
+    return {"status": "ok", "drive_configured": bool(GOOGLE_API_KEY)}
 
 
-@app.post("/api/watermark")
-async def watermark_single(
-    image: UploadFile = File(..., description="Source image"),
-    wm_image: Optional[UploadFile] = File(None, description="Watermark image (for image/both mode)"),
-    # Watermark
+# ─────────────────────────────────────────────────────────────
+# Routes — Google Drive
+# ─────────────────────────────────────────────────────────────
+@app.get("/api/drive/status")
+def drive_status():
+    return {
+        "configured": bool(GOOGLE_API_KEY),
+        "message": (
+            "✅ Server มี Google API Key พร้อมใช้งาน"
+            if GOOGLE_API_KEY else
+            "⚠️ ยังไม่ได้ตั้งค่า API Key — ใส่ใน .env หรือส่งมากับ request"
+        ),
+    }
+
+
+@app.post("/api/drive/list-folder")
+async def list_drive_folder(
+    folder_id: str = Form(...),
+    recursive: bool = Form(False),
+    x_google_api_key: str = Header("", alias="X-Google-Api-Key"),
+):
+    api_key = _resolve_api_key(x_google_api_key)
+    async with httpx.AsyncClient() as client:
+        files = await drive_list_folder(folder_id, api_key, recursive, client)
+    return {"count": len(files), "files": files}
+
+
+@app.post("/api/drive/watermark-folder")
+async def watermark_drive_folder(
+    folder_id: str = Form(...),
+    recursive: bool = Form(False),
+    # Watermark settings
     wm_type: str = Form("text"),
     text: str = Form("© Copyright"),
     font_name: str = Form("Arial"),
@@ -388,9 +381,168 @@ async def watermark_single(
     y_pct: float = Form(50.0),
     tiled: bool = Form(False),
     tile_spacing: int = Form(100),
-    shadow: bool = Form(False),
-    multiply: bool = Form(False),
-    # Output
+    out_format: str = Form("jpeg"),
+    quality: int = Form(92),
+    resize_w: Optional[int] = Form(None),
+    resize_h: Optional[int] = Form(None),
+    keep_aspect: bool = Form(True),
+    filename_prefix: str = Form("wm_"),
+    zip_folder: str = Form("watermarked"),
+    wm_image: Optional[UploadFile] = File(None),
+    x_google_api_key: str = Header("", alias="X-Google-Api-Key"),
+):
+    api_key = _resolve_api_key(x_google_api_key)
+
+    wm_img_obj = None
+    if wm_image:
+        raw = await wm_image.read()
+        wm_img_obj = Image.open(io.BytesIO(raw)).convert("RGBA")
+
+    settings = _wm_settings(
+        wm_type, text, font_name, font_size, color, stroke_color, stroke_width,
+        bold, italic, underline, opacity, rotation, x_pct, y_pct,
+        tiled, tile_spacing, out_format, quality, resize_w, resize_h, keep_aspect,
+    )
+    settings["wm_img"] = wm_img_obj
+
+    async with httpx.AsyncClient() as client:
+        files = await drive_list_folder(folder_id, api_key, recursive, client)
+        if not files:
+            raise HTTPException(404, "ไม่พบรูปในโฟลเดอร์")
+
+        ext = "jpg" if out_format == "jpeg" else out_format
+        zip_buf = io.BytesIO()
+        ok, errors = 0, []
+
+        with zipfile.ZipFile(zip_buf, "w", zipfile.ZIP_DEFLATED) as zf:
+            for f in files:
+                try:
+                    img_bytes = await drive_download_image(f["id"], api_key, client)
+                    img = Image.open(io.BytesIO(img_bytes))
+                    result = apply_watermark(img, **settings)
+                    base_name = os.path.splitext(f["name"])[0]
+                    zf.writestr(f"{zip_folder}/{filename_prefix}{base_name}.{ext}", result)
+                    ok += 1
+                except Exception as e:
+                    errors.append({"file": f["name"], "error": str(e)})
+
+    if ok == 0:
+        raise HTTPException(500, {"message": "ประมวลผลล้มเหลวทุกไฟล์", "errors": errors})
+
+    zip_buf.seek(0)
+    return StreamingResponse(
+        zip_buf, media_type="application/zip",
+        headers={
+            "Content-Disposition": 'attachment; filename="watermarked.zip"',
+            "X-Processed": str(ok),
+            "X-Errors": str(len(errors)),
+            "X-Total": str(len(files)),
+        },
+    )
+
+
+@app.post("/api/drive/watermark-files")
+async def watermark_drive_files(
+    file_ids: str = Form(..., description="Comma-separated Drive file IDs"),
+    file_names: str = Form("", description="Comma-separated filenames (optional)"),
+    # Watermark settings
+    wm_type: str = Form("text"),
+    text: str = Form("© Copyright"),
+    font_name: str = Form("Arial"),
+    font_size: int = Form(36),
+    color: str = Form("#ffffff"),
+    stroke_color: str = Form("#000000"),
+    stroke_width: int = Form(2),
+    bold: bool = Form(False),
+    italic: bool = Form(False),
+    underline: bool = Form(False),
+    opacity: float = Form(0.7),
+    rotation: float = Form(-30.0),
+    x_pct: float = Form(50.0),
+    y_pct: float = Form(50.0),
+    tiled: bool = Form(False),
+    tile_spacing: int = Form(100),
+    out_format: str = Form("jpeg"),
+    quality: int = Form(92),
+    resize_w: Optional[int] = Form(None),
+    resize_h: Optional[int] = Form(None),
+    keep_aspect: bool = Form(True),
+    filename_prefix: str = Form("wm_"),
+    zip_folder: str = Form("watermarked"),
+    wm_image: Optional[UploadFile] = File(None),
+    x_google_api_key: str = Header("", alias="X-Google-Api-Key"),
+):
+    api_key = _resolve_api_key(x_google_api_key)
+    ids = [i.strip() for i in file_ids.split(",") if i.strip()]
+    names_list = [n.strip() for n in file_names.split(",") if n.strip()]
+
+    wm_img_obj = None
+    if wm_image:
+        raw = await wm_image.read()
+        wm_img_obj = Image.open(io.BytesIO(raw)).convert("RGBA")
+
+    settings = _wm_settings(
+        wm_type, text, font_name, font_size, color, stroke_color, stroke_width,
+        bold, italic, underline, opacity, rotation, x_pct, y_pct,
+        tiled, tile_spacing, out_format, quality, resize_w, resize_h, keep_aspect,
+    )
+    settings["wm_img"] = wm_img_obj
+    ext = "jpg" if out_format == "jpeg" else out_format
+
+    async with httpx.AsyncClient() as client:
+        zip_buf = io.BytesIO()
+        ok, errors = 0, []
+
+        with zipfile.ZipFile(zip_buf, "w", zipfile.ZIP_DEFLATED) as zf:
+            for i, fid in enumerate(ids):
+                fname = names_list[i] if i < len(names_list) else f"image_{i+1}.{ext}"
+                try:
+                    img_bytes = await drive_download_image(fid, api_key, client)
+                    img = Image.open(io.BytesIO(img_bytes))
+                    result = apply_watermark(img, **settings)
+                    base_name = os.path.splitext(fname)[0]
+                    zf.writestr(f"{zip_folder}/{filename_prefix}{base_name}.{ext}", result)
+                    ok += 1
+                except Exception as e:
+                    errors.append({"id": fid, "file": fname, "error": str(e)})
+
+    if ok == 0:
+        raise HTTPException(500, {"message": "ประมวลผลล้มเหลว", "errors": errors})
+
+    zip_buf.seek(0)
+    return StreamingResponse(
+        zip_buf, media_type="application/zip",
+        headers={
+            "Content-Disposition": 'attachment; filename="watermarked.zip"',
+            "X-Processed": str(ok),
+            "X-Errors": str(len(errors)),
+        },
+    )
+
+
+# ─────────────────────────────────────────────────────────────
+# Routes — Local image watermark (upload → process)
+# ─────────────────────────────────────────────────────────────
+@app.post("/api/watermark")
+async def watermark_single(
+    image: UploadFile = File(...),
+    wm_image: Optional[UploadFile] = File(None),
+    wm_type: str = Form("text"),
+    text: str = Form("© Copyright"),
+    font_name: str = Form("Arial"),
+    font_size: int = Form(36),
+    color: str = Form("#ffffff"),
+    stroke_color: str = Form("#000000"),
+    stroke_width: int = Form(2),
+    bold: bool = Form(False),
+    italic: bool = Form(False),
+    underline: bool = Form(False),
+    opacity: float = Form(0.7),
+    rotation: float = Form(-30.0),
+    x_pct: float = Form(50.0),
+    y_pct: float = Form(50.0),
+    tiled: bool = Form(False),
+    tile_spacing: int = Form(100),
     out_format: str = Form("jpeg"),
     quality: int = Form(92),
     resize_w: Optional[int] = Form(None),
@@ -399,50 +551,39 @@ async def watermark_single(
     filename_prefix: str = Form("wm_"),
 ):
     try:
-        src_bytes = await image.read()
-        src_img = Image.open(io.BytesIO(src_bytes))
+        src = Image.open(io.BytesIO(await image.read()))
     except Exception as e:
-        raise HTTPException(status_code=400, detail=f"ไม่สามารถเปิดไฟล์รูปได้: {e}")
+        raise HTTPException(400, f"เปิดไฟล์ไม่ได้: {e}")
 
     wm_img_obj = None
     if wm_image:
-        try:
-            wm_bytes = await wm_image.read()
-            wm_img_obj = Image.open(io.BytesIO(wm_bytes)).convert("RGBA")
-        except Exception as e:
-            raise HTTPException(status_code=400, detail=f"ไม่สามารถเปิดไฟล์ลายน้ำได้: {e}")
+        wm_img_obj = Image.open(io.BytesIO(await wm_image.read())).convert("RGBA")
+
+    settings = _wm_settings(
+        wm_type, text, font_name, font_size, color, stroke_color, stroke_width,
+        bold, italic, underline, opacity, rotation, x_pct, y_pct,
+        tiled, tile_spacing, out_format, quality, resize_w, resize_h, keep_aspect,
+    )
+    settings["wm_img"] = wm_img_obj
 
     try:
-        result_bytes = apply_watermark(
-            src_img,
-            wm_img=wm_img_obj,
-            **_parse_form(
-                wm_type, text, font_name, font_size, color, stroke_color, stroke_width,
-                bold, italic, underline, opacity, rotation, x_pct, y_pct,
-                tiled, tile_spacing, shadow, multiply,
-                out_format, quality, resize_w, resize_h, keep_aspect,
-            ),
-        )
+        result = apply_watermark(src, **settings)
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"ประมวลผลล้มเหลว: {e}")
+        raise HTTPException(500, f"ประมวลผลล้มเหลว: {e}")
 
-    ext = out_format if out_format != "jpeg" else "jpg"
-    orig_name = os.path.splitext(image.filename or "image")[0]
-    out_name = f"{filename_prefix}{orig_name}.{ext}"
-
+    ext = "jpg" if out_format == "jpeg" else out_format
+    orig = os.path.splitext(image.filename or "image")[0]
     mime = {"jpeg": "image/jpeg", "png": "image/png", "webp": "image/webp"}.get(out_format, "image/jpeg")
     return StreamingResponse(
-        io.BytesIO(result_bytes),
-        media_type=mime,
-        headers={"Content-Disposition": f'attachment; filename="{out_name}"'},
+        io.BytesIO(result), media_type=mime,
+        headers={"Content-Disposition": f'attachment; filename="{filename_prefix}{orig}.{ext}"'},
     )
 
 
 @app.post("/api/watermark/batch")
 async def watermark_batch(
-    images: list[UploadFile] = File(..., description="Source images (multiple)"),
-    wm_image: Optional[UploadFile] = File(None, description="Watermark image"),
-    # Watermark
+    images: List[UploadFile] = File(...),
+    wm_image: Optional[UploadFile] = File(None),
     wm_type: str = Form("text"),
     text: str = Form("© Copyright"),
     font_name: str = Form("Arial"),
@@ -459,9 +600,6 @@ async def watermark_batch(
     y_pct: float = Form(50.0),
     tiled: bool = Form(False),
     tile_spacing: int = Form(100),
-    shadow: bool = Form(False),
-    multiply: bool = Form(False),
-    # Output
     out_format: str = Form("jpeg"),
     quality: int = Form(92),
     resize_w: Optional[int] = Form(None),
@@ -472,47 +610,39 @@ async def watermark_batch(
 ):
     wm_img_obj = None
     if wm_image:
-        try:
-            wm_bytes = await wm_image.read()
-            wm_img_obj = Image.open(io.BytesIO(wm_bytes)).convert("RGBA")
-        except Exception as e:
-            raise HTTPException(status_code=400, detail=f"ไม่สามารถเปิดไฟล์ลายน้ำได้: {e}")
+        wm_img_obj = Image.open(io.BytesIO(await wm_image.read())).convert("RGBA")
 
-    settings = _parse_form(
+    settings = _wm_settings(
         wm_type, text, font_name, font_size, color, stroke_color, stroke_width,
         bold, italic, underline, opacity, rotation, x_pct, y_pct,
-        tiled, tile_spacing, shadow, multiply,
-        out_format, quality, resize_w, resize_h, keep_aspect,
+        tiled, tile_spacing, out_format, quality, resize_w, resize_h, keep_aspect,
     )
+    settings["wm_img"] = wm_img_obj
+    ext = "jpg" if out_format == "jpeg" else out_format
 
-    ext = out_format if out_format != "jpeg" else "jpg"
     zip_buf = io.BytesIO()
-    ok_count = 0
-    errors = []
+    ok, errors = 0, []
 
     with zipfile.ZipFile(zip_buf, "w", zipfile.ZIP_DEFLATED) as zf:
-        for i, upload in enumerate(images):
+        for upload in images:
             try:
-                src_bytes = await upload.read()
-                src_img = Image.open(io.BytesIO(src_bytes))
-                result_bytes = apply_watermark(src_img, wm_img=wm_img_obj, **settings)
-                orig_name = os.path.splitext(upload.filename or f"image_{i+1}")[0]
-                out_name = f"{filename_prefix}{orig_name}.{ext}"
-                zf.writestr(f"{zip_folder}/{out_name}", result_bytes)
-                ok_count += 1
+                src = Image.open(io.BytesIO(await upload.read()))
+                result = apply_watermark(src, **settings)
+                base = os.path.splitext(upload.filename or f"img_{ok+1}")[0]
+                zf.writestr(f"{zip_folder}/{filename_prefix}{base}.{ext}", result)
+                ok += 1
             except Exception as e:
                 errors.append({"file": upload.filename, "error": str(e)})
 
-    if ok_count == 0:
-        raise HTTPException(status_code=500, detail={"message": "ประมวลผลทุกไฟล์ล้มเหลว", "errors": errors})
+    if ok == 0:
+        raise HTTPException(500, {"message": "ประมวลผลล้มเหลวทุกไฟล์", "errors": errors})
 
     zip_buf.seek(0)
     return StreamingResponse(
-        zip_buf,
-        media_type="application/zip",
+        zip_buf, media_type="application/zip",
         headers={
             "Content-Disposition": 'attachment; filename="watermarked.zip"',
-            "X-Processed": str(ok_count),
+            "X-Processed": str(ok),
             "X-Errors": str(len(errors)),
         },
     )
