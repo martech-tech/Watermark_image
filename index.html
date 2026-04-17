@@ -422,14 +422,173 @@ input[type=color] { width: 40px; height: 34px; border: 1px solid var(--border); 
 .gdrive-hint { font-size: 0.7rem; color: var(--text-muted); margin-top: 7px; line-height: 1.55; padding: 7px 9px; background: rgba(66,133,244,0.06); border-radius: 6px; border: 1px solid rgba(66,133,244,0.15); }
 .gdrive-hint b { color: #4285f4; }
 
+/* ─── UPLOAD UI REDESIGN ─────────────────────── */
+
+/* Source picker cards */
+.src-cards { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 16px; }
+.src-card {
+  border: 2px solid var(--border); border-radius: 12px; padding: 14px 10px;
+  text-align: center; cursor: pointer; transition: all 0.2s;
+  background: var(--surface3); user-select: none;
+}
+.src-card:hover { border-color: rgba(124,111,252,0.5); background: rgba(124,111,252,0.06); transform: translateY(-1px); }
+.src-card.active { border-color: var(--primary); background: rgba(124,111,252,0.1); box-shadow: 0 0 0 3px var(--primary-glow); }
+.src-card-icon { font-size: 1.8rem; margin-bottom: 6px; }
+.src-card-label { font-size: 0.8rem; font-weight: 700; color: var(--text); }
+.src-card-sub { font-size: 0.68rem; color: var(--text-muted); margin-top: 2px; }
+
+/* Source panels */
+.src-panel { display: none; }
+.src-panel.active { display: block; }
+
+/* Big drop zone */
+.big-drop {
+  border: 2.5px dashed var(--border); border-radius: 16px;
+  padding: 32px 16px; text-align: center; cursor: pointer;
+  transition: all 0.25s; background: var(--surface3);
+  position: relative; overflow: hidden;
+}
+.big-drop::before {
+  content: ''; position: absolute; inset: 0;
+  background: radial-gradient(ellipse at 50% 120%, rgba(124,111,252,0.08) 0%, transparent 70%);
+  opacity: 0; transition: opacity 0.3s;
+}
+.big-drop:hover, .big-drop.drag-over { border-color: var(--primary); }
+.big-drop:hover::before, .big-drop.drag-over::before { opacity: 1; }
+.big-drop.drag-over { background: rgba(124,111,252,0.07); box-shadow: 0 0 0 4px var(--primary-glow); }
+.drop-icon-wrap {
+  width: 64px; height: 64px; border-radius: 16px; margin: 0 auto 14px;
+  background: linear-gradient(135deg, rgba(124,111,252,0.18), rgba(255,101,132,0.12));
+  border: 1px solid rgba(124,111,252,0.2);
+  display: flex; align-items: center; justify-content: center; font-size: 1.8rem;
+  transition: transform 0.2s;
+}
+.big-drop:hover .drop-icon-wrap { transform: scale(1.08) translateY(-2px); }
+.big-drop h3 { font-size: 0.95rem; font-weight: 700; color: var(--text); margin-bottom: 5px; }
+.big-drop p { font-size: 0.78rem; color: var(--text-muted); margin-bottom: 4px; }
+.drop-formats { display: flex; gap: 5px; justify-content: center; flex-wrap: wrap; margin-top: 10px; }
+.fmt-tag { font-size: 0.68rem; background: rgba(124,111,252,0.1); border: 1px solid rgba(124,111,252,0.2); border-radius: 99px; padding: 2px 8px; color: rgba(124,111,252,0.85); }
+
+/* or divider */
+.or-divider { display: flex; align-items: center; gap: 8px; margin: 10px 0; color: var(--text-muted); font-size: 0.72rem; }
+.or-divider::before, .or-divider::after { content: ''; flex: 1; height: 1px; background: var(--border); }
+
+/* Google Drive smart input */
+.gdrive-smart {
+  background: var(--surface3); border-radius: 14px; overflow: hidden;
+  border: 1px solid var(--border2);
+}
+.gdrive-smart-head {
+  display: flex; align-items: center; gap: 10px; padding: 12px 14px;
+  background: linear-gradient(135deg, rgba(66,133,244,0.09), rgba(52,168,83,0.06));
+  border-bottom: 1px solid var(--border2);
+}
+.gdrive-smart-head-text h4 { font-size: 0.84rem; font-weight: 700; color: var(--text); }
+.gdrive-smart-head-text p { font-size: 0.7rem; color: var(--text-muted); margin-top: 1px; }
+.gdrive-smart-body { padding: 12px; }
+
+.smart-input-wrap { position: relative; }
+.smart-input-wrap textarea {
+  width: 100%; min-height: 80px; background: var(--bg); border: 1.5px solid var(--border);
+  border-radius: 10px; padding: 10px 12px; color: var(--text); font-size: 0.82rem;
+  outline: none; resize: none; line-height: 1.6; transition: border-color 0.18s;
+  font-family: inherit;
+}
+.smart-input-wrap textarea:focus { border-color: #4285f4; box-shadow: 0 0 0 2px rgba(66,133,244,0.15); }
+.smart-input-wrap textarea::placeholder { color: var(--text-muted); font-size: 0.77rem; }
+.smart-type-badge {
+  position: absolute; top: 8px; right: 8px; font-size: 0.67rem; font-weight: 700;
+  border-radius: 99px; padding: 2px 8px; transition: all 0.2s; pointer-events: none;
+}
+.smart-type-badge.file   { background: rgba(66,133,244,0.15); color: #4285f4; border: 1px solid rgba(66,133,244,0.3); }
+.smart-type-badge.folder { background: rgba(52,168,83,0.15);  color: #34a853; border: 1px solid rgba(52,168,83,0.3); }
+.smart-type-badge.multi  { background: rgba(124,111,252,0.15); color: var(--primary); border: 1px solid rgba(124,111,252,0.3); }
+.smart-type-badge.empty  { display: none; }
+
+.gdrive-share-notice {
+  display: flex; align-items: flex-start; gap: 7px; margin: 9px 0;
+  padding: 8px 10px; background: rgba(255,201,71,0.07); border: 1px solid rgba(255,201,71,0.2);
+  border-radius: 8px; font-size: 0.72rem; color: var(--text-muted); line-height: 1.5;
+}
+.gdrive-share-notice b { color: var(--warning); }
+
+/* folder options — shown only when folder detected */
+.folder-opts { display: none; padding: 8px 0; }
+.folder-opts.show { display: block; }
+.folder-scan-result {
+  display: flex; align-items: center; gap: 8px; margin: 8px 0;
+  padding: 8px 10px; background: rgba(52,168,83,0.08);
+  border: 1px solid rgba(52,168,83,0.2); border-radius: 8px;
+  font-size: 0.78rem; display: none;
+}
+.folder-scan-result.show { display: flex; }
+.folder-scan-count { font-weight: 700; color: #34a853; font-size: 1rem; }
+
+/* Import button variants */
+.btn-import {
+  width: 100%; padding: 12px; border-radius: 10px; border: none; cursor: pointer;
+  font-size: 0.88rem; font-weight: 700; transition: all 0.2s;
+  display: flex; align-items: center; justify-content: center; gap: 8px;
+}
+.btn-import.local { background: linear-gradient(135deg, var(--primary), #9b59b6); color: white; }
+.btn-import.local:hover { box-shadow: 0 6px 20px var(--primary-glow); transform: translateY(-2px); }
+.btn-import.drive { background: linear-gradient(135deg, #4285f4, #34a853); color: white; }
+.btn-import.drive:hover { box-shadow: 0 6px 20px rgba(66,133,244,0.4); transform: translateY(-2px); }
+.btn-import:disabled { opacity: 0.45; transform: none !important; cursor: not-allowed; }
+
+/* progress pill */
+.upload-progress-pill {
+  display: none; align-items: center; gap: 10px; padding: 9px 12px;
+  background: rgba(124,111,252,0.08); border: 1px solid rgba(124,111,252,0.2);
+  border-radius: 10px; margin-top: 10px;
+}
+.upload-progress-pill.show { display: flex; }
+.upp-spinner { width: 16px; height: 16px; border: 2px solid rgba(124,111,252,0.3); border-top-color: var(--primary); border-radius: 50%; animation: spin 0.7s linear infinite; flex-shrink: 0; }
+.upp-text { flex: 1; font-size: 0.75rem; color: var(--text-muted); }
+.upp-text b { color: var(--primary); }
+.upp-bar-wrap { flex: 1; }
+
+/* file list bar */
+.file-list-bar {
+  display: flex; align-items: center; gap: 8px; padding: 10px 12px;
+  background: var(--surface2); border-radius: 10px; border: 1px solid var(--border2);
+  margin-top: 16px;
+}
+.file-list-count { font-size: 0.82rem; flex: 1; }
+.file-list-count b { color: var(--primary); font-size: 1rem; }
+.flb-btn { height: 26px; padding: 0 9px; border-radius: 6px; border: 1px solid var(--border); background: transparent; color: var(--text-muted); cursor: pointer; font-size: 0.7rem; font-weight: 600; transition: all 0.15s; white-space: nowrap; }
+.flb-btn:hover { border-color: var(--primary); color: var(--primary); }
+.flb-btn.danger:hover { border-color: var(--danger); color: var(--danger); }
+
+/* advanced toggle */
+.adv-toggle { font-size: 0.71rem; color: var(--text-muted); cursor: pointer; display: flex; align-items: center; gap: 4px; margin-top: 8px; width: fit-content; }
+.adv-toggle:hover { color: var(--text); }
+.adv-toggle svg { transition: transform 0.2s; }
+.adv-toggle.open svg { transform: rotate(180deg); }
+.adv-body { display: none; margin-top: 8px; }
+.adv-body.open { display: block; }
+
+/* gdrive log */
+.gdrive-log { margin-top: 8px; max-height: 130px; overflow-y: auto; display: flex; flex-direction: column; gap: 1px; }
+.glog-row { display: flex; align-items: center; gap: 6px; padding: 4px 6px; border-radius: 5px; font-size: 0.72rem; }
+.glog-row.glog-ok   { background: rgba(61,220,132,0.08); }
+.glog-row.glog-err  { background: rgba(255,77,109,0.08); }
+.glog-row.glog-load { background: rgba(124,111,252,0.08); }
+.glog-row.glog-warn { background: rgba(255,201,71,0.08); }
+.glog-icon { width: 14px; text-align: center; flex-shrink: 0; }
+.glog-row.glog-load .glog-icon { display: inline-block; animation: spin 0.8s linear infinite; }
+.glog-text { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.glog-row.glog-ok   .glog-text { color: var(--success); }
+.glog-row.glog-err  .glog-text { color: var(--danger); }
+.glog-row.glog-load .glog-text { color: var(--primary); }
+.glog-row.glog-warn .glog-text { color: var(--warning); }
+
 /* folder progress */
 .folder-progress-wrap { margin-top: 9px; display: none; }
 .folder-progress-wrap.show { display: block; }
 .folder-progress-top { display: flex; justify-content: space-between; font-size: 0.72rem; color: var(--text-muted); margin-bottom: 4px; }
 .folder-progress-top b { color: var(--text); }
 .folder-found-badge { display: inline-flex; align-items: center; gap: 5px; font-size: 0.72rem; background: rgba(52,168,83,0.12); border: 1px solid rgba(52,168,83,0.25); border-radius: 99px; padding: 2px 8px; color: #34a853; font-weight: 700; margin-top: 5px; }
-
-/* api key toggle */
 .apikey-toggle { font-size: 0.72rem; color: #4285f4; cursor: pointer; text-decoration: underline; margin-top: 6px; display: inline-block; }
 .apikey-row { display: none; margin-top: 6px; }
 .apikey-row.show { display: block; }
@@ -478,134 +637,158 @@ input[type=color] { width: 40px; height: 34px; border: 1px solid var(--border); 
 
     <!-- UPLOAD TAB -->
     <div id="tab-upload" class="tab-panel active">
-      <div class="section">
-        <div class="section-title">เพิ่มรูปภาพ</div>
-        <div class="upload-zone" id="uploadZone" onclick="document.getElementById('fileInput').click()">
-          <div class="upload-icon">
-            <svg width="40" height="40" viewBox="0 0 40 40" fill="currentColor"><path d="M20 4C11.2 4 4 11.2 4 20s7.2 16 16 16 16-7.2 16-16S28.8 4 20 4zm-2 22v-7h-5l7-10 7 10h-5v7h-4z"/></svg>
+
+      <!-- ① SOURCE PICKER -->
+      <div class="src-cards">
+        <div class="src-card active" id="srcLocal" onclick="selectSource('local')">
+          <div class="src-card-icon">💻</div>
+          <div class="src-card-label">จากเครื่อง</div>
+          <div class="src-card-sub">เลือกจากไฟล์</div>
+        </div>
+        <div class="src-card" id="srcDrive" onclick="selectSource('drive')">
+          <div class="src-card-icon">☁️</div>
+          <div class="src-card-label">Google Drive</div>
+          <div class="src-card-sub">วางลิงก์ได้เลย</div>
+        </div>
+      </div>
+
+      <!-- ② PANEL: LOCAL -->
+      <div class="src-panel active" id="panelLocal">
+        <div class="big-drop" id="uploadZone" onclick="document.getElementById('fileInput').click()">
+          <div class="drop-icon-wrap">🖼️</div>
+          <h3>ลากรูปมาวางที่นี่</h3>
+          <p>หรือคลิกเพื่อเลือกไฟล์จากเครื่อง</p>
+          <div class="drop-formats">
+            <span class="fmt-tag">JPG</span><span class="fmt-tag">PNG</span>
+            <span class="fmt-tag">WebP</span><span class="fmt-tag">GIF</span>
+            <span class="fmt-tag">BMP</span>
           </div>
-          <p><strong>คลิกหรือลากไฟล์มาวางที่นี่</strong></p>
-          <p style="margin-top:5px">JPG · PNG · WebP · GIF · BMP</p>
-          <p style="margin-top:4px;color:var(--primary);font-weight:700">รองรับ 10,000+ รูปต่อครั้ง</p>
+          <p style="margin-top:10px;font-size:0.75rem;color:var(--primary);font-weight:700">
+            ✅ รองรับมากกว่า 10,000 รูปในครั้งเดียว
+          </p>
         </div>
         <input type="file" id="fileInput" multiple accept="image/*" style="display:none">
-      </div>
-      <!-- GOOGLE DRIVE SECTION -->
-      <div class="section">
-        <div class="section-title">นำเข้าจาก Google Drive</div>
-        <div class="gdrive-box">
-          <div class="gdrive-head" onclick="toggleGdrive()">
-            <div class="gdrive-logo">
-              <svg width="18" height="18" viewBox="0 0 87.3 78" fill="none">
-                <path d="M6.6 66.85l3.85 6.65c.8 1.4 1.95 2.5 3.3 3.3L28 53H0c0 1.55.4 3.1 1.2 4.5z" fill="#0066da"/>
-                <path d="M43.65 25L29.4 0c-1.35.8-2.5 1.9-3.3 3.3L1.2 48.5c-.8 1.35-1.2 2.9-1.2 4.5h28z" fill="#00ac47"/>
-                <path d="M73.55 76.8c1.35-.8 2.5-1.9 3.3-3.3l1.6-2.75L86.1 57c.8-1.4 1.2-2.95 1.2-4.5H59.3l5.9 11.4z" fill="#ea4335"/>
-                <path d="M43.65 25L57.9 0H29.4z" fill="#00832d"/>
-                <path d="M59.3 52.5H87.3L73.55 27.7H45.55z" fill="#2684fc"/>
-                <path d="M43.65 25L29.4 52.5h29.9z" fill="#00ac47"/>
-              </svg>
-              Google Drive
+
+        <!-- loading progress (hidden until uploading) -->
+        <div class="upload-progress-pill" id="localProgressPill">
+          <div class="upp-spinner"></div>
+          <div class="upp-text">กำลังโหลด <b id="localProgressText">0 / 0</b></div>
+          <div style="flex:1">
+            <div class="progress-bar" style="margin:0">
+              <div class="progress-fill" id="loadBar" style="width:0%"></div>
             </div>
-            <span class="gdrive-chevron" id="gdriveChevron">▼</span>
+          </div>
+        </div>
+        <!-- hidden inputs needed by old JS -->
+        <span id="loadProgress" style="display:none"></span>
+      </div>
+
+      <!-- ② PANEL: GOOGLE DRIVE -->
+      <div class="src-panel" id="panelDrive">
+        <div class="gdrive-smart">
+          <div class="gdrive-smart-head">
+            <svg width="22" height="22" viewBox="0 0 87.3 78" fill="none">
+              <path d="M6.6 66.85l3.85 6.65c.8 1.4 1.95 2.5 3.3 3.3L28 53H0c0 1.55.4 3.1 1.2 4.5z" fill="#0066da"/>
+              <path d="M43.65 25L29.4 0c-1.35.8-2.5 1.9-3.3 3.3L1.2 48.5c-.8 1.35-1.2 2.9-1.2 4.5h28z" fill="#00ac47"/>
+              <path d="M73.55 76.8c1.35-.8 2.5-1.9 3.3-3.3l1.6-2.75L86.1 57c.8-1.4 1.2-2.95 1.2-4.5H59.3l5.9 11.4z" fill="#ea4335"/>
+              <path d="M43.65 25L57.9 0H29.4z" fill="#00832d"/>
+              <path d="M59.3 52.5H87.3L73.55 27.7H45.55z" fill="#2684fc"/>
+              <path d="M43.65 25L29.4 52.5h29.9z" fill="#00ac47"/>
+            </svg>
+            <div class="gdrive-smart-head-text">
+              <h4>วางลิงก์ Google Drive</h4>
+              <p>รองรับทั้งไฟล์เดี่ยว และโฟลเดอร์อัตโนมัติ</p>
+            </div>
           </div>
 
-          <div class="gdrive-body" id="gdriveBody">
-            <!-- sub-tabs -->
-            <div class="gdrive-tabs">
-              <button class="gdrive-tab active" onclick="switchGdriveTab('urls')">🔗 URL รายไฟล์</button>
-              <button class="gdrive-tab" onclick="switchGdriveTab('folder')">📂 ทั้งโฟลเดอร์</button>
+          <div class="gdrive-smart-body">
+            <!-- Smart input — auto-detects file vs folder -->
+            <div class="smart-input-wrap">
+              <textarea id="gdriveSmartInput" rows="3"
+                oninput="onSmartInputChange()"
+                placeholder="วางลิงก์ที่นี่ได้เลย…&#10;&#10;• ลิงก์ไฟล์: drive.google.com/file/d/…&#10;• ลิงก์โฟลเดอร์: drive.google.com/drive/folders/…&#10;• วางหลายลิงก์ก็ได้ (คนละบรรทัด)"></textarea>
+              <div class="smart-type-badge empty" id="smartTypeBadge"></div>
             </div>
 
-            <!-- PANE: individual URLs -->
-            <div class="gdrive-pane active" id="gdrivePane-urls">
-              <textarea class="gdrive-textarea" id="gdriveUrls"
-                placeholder="วาง URL Google Drive (หลาย URL = คนละบรรทัด)&#10;&#10;https://drive.google.com/file/d/1ABC.../view&#10;https://drive.google.com/open?id=1XYZ..."></textarea>
-              <div class="gdrive-hint" style="margin-top:7px">
-                <b>⚠️ การแชร์:</b> ต้องตั้งเป็น "ทุกคนที่มีลิงก์" ก่อน
-              </div>
-              <button class="btn btn-gdrive btn-full" style="margin-top:8px" id="btnImportUrls" onclick="importFromGdrive()">
-                ⬇️ นำเข้าไฟล์ที่เลือก
-              </button>
-              <div class="gdrive-log" id="gdriveLog"></div>
+            <!-- share notice -->
+            <div class="gdrive-share-notice">
+              <span>⚠️</span>
+              <span><b>ก่อนใช้งาน:</b> ต้องตั้งค่าการแชร์ไฟล์/โฟลเดอร์ใน Drive เป็น<br>
+              <b style="color:var(--text)">"ทุกคนที่มีลิงก์สามารถดูได้"</b></span>
             </div>
 
-            <!-- PANE: whole folder -->
-            <div class="gdrive-pane" id="gdrivePane-folder">
-              <label>URL โฟลเดอร์ Google Drive</label>
-              <input type="text" id="gdriveFolderUrl" style="margin-bottom:8px"
-                placeholder="https://drive.google.com/drive/folders/...">
-
+            <!-- folder-only options (shown when folder URL detected) -->
+            <div class="folder-opts" id="folderOpts">
               <div class="check-row" style="margin-bottom:8px">
                 <input type="checkbox" id="gdriveRecursive">
-                <span>รวมโฟลเดอร์ย่อย (sub-folders)</span>
+                <span>รวมรูปในโฟลเดอร์ย่อยด้วย</span>
               </div>
-
-              <span class="apikey-toggle" onclick="toggleApiKey()">🔑 ใส่ Google API Key (แนะนำสำหรับโฟลเดอร์ใหญ่)</span>
-              <div class="apikey-row" id="apikeyRow">
-                <input type="password" id="gdriveApiKey" placeholder="AIzaSy..." style="margin-bottom:4px">
-                <div class="gdrive-hint">
-                  ได้จาก <b>console.cloud.google.com</b> → Enable Drive API → Create API Key<br>
-                  ถ้าไม่ใส่ จะใช้วิธี scraping (จำกัด ~200 ไฟล์/หน้า)
+              <!-- scan result -->
+              <div class="folder-scan-result" id="folderScanResult">
+                <span style="font-size:1.4rem">📂</span>
+                <div>
+                  <div style="font-size:0.72rem;color:var(--text-muted)">พบรูปภาพในโฟลเดอร์</div>
+                  <div class="folder-scan-count" id="folderScanCount">0 รูป</div>
                 </div>
               </div>
-
-              <div style="display:flex;gap:6px;margin-top:9px">
-                <button class="btn btn-gdrive" style="flex:1" id="btnScanFolder" onclick="scanGdriveFolder()">
-                  🔍 สแกนโฟลเดอร์
-                </button>
-                <button class="btn btn-secondary" style="flex:0 0 auto;display:none" id="btnCancelFolder" onclick="cancelFolderImport()">
-                  ✕ หยุด
-                </button>
-              </div>
-
-              <!-- found files summary -->
-              <div id="folderFoundWrap" style="display:none;margin-top:8px">
-                <div class="folder-found-badge" id="folderFoundBadge">📄 พบ 0 รูป</div>
-                <button class="btn btn-gdrive btn-full" style="margin-top:8px" id="btnImportFolder" onclick="importGdriveFolder()">
-                  ⬇️ นำเข้าทั้งหมด
-                </button>
-              </div>
-
-              <!-- progress -->
-              <div class="folder-progress-wrap" id="folderProgressWrap">
-                <div class="folder-progress-top">
-                  <span id="folderProgressLabel">กำลังโหลด…</span>
-                  <b id="folderProgressCount">0 / 0</b>
-                </div>
-                <div class="progress-bar"><div class="progress-fill" id="folderProgressBar" style="width:0%"></div></div>
-              </div>
-
-              <div class="gdrive-log" id="folderLog" style="margin-top:6px"></div>
             </div>
+
+            <!-- main action button — label changes by type -->
+            <button class="btn-import drive" id="btnDriveImport" onclick="smartDriveImport()">
+              ⬇️ นำเข้ารูปภาพ
+            </button>
+            <div style="display:flex;justify-content:center;margin-top:6px">
+              <button class="btn btn-secondary" style="display:none;padding:4px 12px;font-size:0.72rem" id="btnDriveCancel" onclick="GD.cancelFlag=true;this.style.display='none'">
+                ✕ หยุด
+              </button>
+            </div>
+
+            <!-- progress -->
+            <div class="folder-progress-wrap" id="folderProgressWrap">
+              <div class="folder-progress-top">
+                <span id="folderProgressLabel">กำลังโหลด…</span>
+                <b id="folderProgressCount">0 / 0</b>
+              </div>
+              <div class="progress-bar"><div class="progress-fill" id="folderProgressBar" style="width:0%"></div></div>
+            </div>
+
+            <!-- per-file log -->
+            <div class="gdrive-log" id="gdriveLog" style="margin-top:6px"></div>
+            <div class="gdrive-log" id="folderLog"  style="margin-top:2px"></div>
+
+            <!-- advanced toggle -->
+            <div class="adv-toggle" id="advToggle" onclick="toggleAdv()">
+              <svg width="10" height="10" viewBox="0 0 10 10" fill="currentColor"><path d="M5 7L1 3h8z"/></svg>
+              ตั้งค่าขั้นสูง (API Key สำหรับโฟลเดอร์ขนาดใหญ่)
+            </div>
+            <div class="adv-body" id="advBody">
+              <label style="margin-top:4px">Google API Key <span style="font-size:0.68rem;color:var(--text-muted)">(ไม่บังคับ)</span></label>
+              <input type="password" id="gdriveApiKey" placeholder="AIzaSy…">
+              <div class="gdrive-share-notice" style="margin-top:7px">
+                ถ้าไม่ใส่ รองรับประมาณ ~200 รูป/โฟลเดอร์<br>
+                ใส่แล้ว รองรับไม่จำกัด — ดูวิธีสร้างได้ที่ <b>console.cloud.google.com</b>
+              </div>
+            </div>
+
+            <!-- hidden compat IDs used by old JS -->
+            <input type="hidden" id="gdriveFolderUrl">
+            <input type="hidden" id="gdriveUrls">
           </div>
         </div>
       </div>
 
-      <div class="section">
-        <div class="section-title">จัดการไฟล์</div>
-        <div class="btn-group">
-          <button class="btn btn-secondary" onclick="clearAll()">🗑 ล้างทั้งหมด</button>
-          <button class="btn btn-secondary" onclick="selectAllThumbs()">☑ เลือกทั้งหมด</button>
-          <button class="btn btn-secondary" onclick="removeSelected()">✂ ลบที่เลือก</button>
+      <!-- ③ FILE LIST BAR -->
+      <div class="file-list-bar" id="fileListBar">
+        <div class="file-list-count">
+          รูปในรายการ <b id="fileListCount">0</b> ไฟล์
         </div>
+        <button class="flb-btn" onclick="selectAllThumbs()">เลือกทั้งหมด</button>
+        <button class="flb-btn danger" onclick="clearAll()">🗑 ล้าง</button>
       </div>
-      <div class="section">
-        <div class="section-title">เรียงลำดับ</div>
-        <select id="sortOrder" onchange="sortImages()">
-          <option value="name">ชื่อไฟล์ A→Z</option>
-          <option value="name-desc">ชื่อไฟล์ Z→A</option>
-          <option value="size">ขนาดเล็ก→ใหญ่</option>
-          <option value="size-desc">ขนาดใหญ่→เล็ก</option>
-          <option value="date">วันที่ใหม่→เก่า</option>
-        </select>
-      </div>
-      <div class="section">
-        <div class="progress-label">
-          <span>ความคืบหน้าการโหลด</span>
-          <span id="loadProgress">0 / 0</span>
-        </div>
-        <div class="progress-bar"><div class="progress-fill" id="loadBar" style="width:0%"></div></div>
-      </div>
+
+      <!-- advanced: sort (hidden by default) -->
+      <select id="sortOrder" onchange="sortImages()" style="display:none"></select>
+
     </div>
 
     <!-- WATERMARK TAB -->
@@ -993,6 +1176,9 @@ async function addImages(files) {
   if (!files.length) return;
   const total = files.length;
   let done = 0;
+  // show progress pill
+  const pill = $('localProgressPill');
+  if (pill) pill.classList.add('show');
   const BATCH = 50;
   for (let i = 0; i < files.length; i += BATCH) {
     const batch = files.slice(i, i+BATCH);
@@ -1013,7 +1199,7 @@ async function addImages(files) {
           done++;
           const pct = Math.round(done/total*100);
           $('loadBar').style.width = pct+'%';
-          $('loadProgress').textContent = `${done} / ${total}`;
+          if ($('localProgressText')) $('localProgressText').textContent = `${done} / ${total}`;
           resolve();
         };
         img.onerror = () => { done++; resolve(); };
@@ -1024,6 +1210,9 @@ async function addImages(files) {
     renderGallery(); updateStats(); await sleep(10);
   }
   renderGallery(); updateStats();
+  // hide progress pill
+  const pill = $('localProgressPill');
+  if (pill) { pill.classList.remove('show'); $('loadBar').style.width='0%'; }
   showNotif('success', `✅ เพิ่ม ${files.length} รูปเรียบร้อย`);
   if (S.currentIdx < 0 && S.images.length > 0) showPreview(0);
 }
@@ -1090,9 +1279,11 @@ function setThumbSize(sz) {
 }
 
 function updateStats() {
-  $('statUploaded').textContent = S.images.length;
+  const n = S.images.length;
+  $('statUploaded').textContent = n;
   $('statProcessed').textContent = S.images.filter(i=>i.processed).length;
   $('statReady').textContent = S.images.filter(i=>i.resultBlob).length;
+  if ($('fileListCount')) $('fileListCount').textContent = n;
 }
 
 // ═══════════════════════════════════════════════════
@@ -1618,23 +1809,110 @@ const GD = {
   cancelFlag: false,
 };
 
-function toggleGdrive() {
-  const body = $('gdriveBody');
-  const chevron = $('gdriveChevron');
-  const open = body.classList.toggle('open');
-  chevron.classList.toggle('open', open);
+// ─── SOURCE PICKER ───────────────────────────────
+function selectSource(src) {
+  ['local','drive'].forEach(s => {
+    $('src' + s[0].toUpperCase() + s.slice(1)).classList.toggle('active', s === src);
+    $('panel' + s[0].toUpperCase() + s.slice(1)).classList.toggle('active', s === src);
+  });
 }
 
-function switchGdriveTab(name) {
-  document.querySelectorAll('.gdrive-tab').forEach((b,i) =>
-    b.classList.toggle('active', ['urls','folder'][i] === name));
-  document.querySelectorAll('.gdrive-pane').forEach(p => p.classList.remove('active'));
-  $(`gdrivePane-${name}`).classList.add('active');
+// ─── SMART URL DETECTOR ──────────────────────────
+function onSmartInputChange() {
+  const val = $('gdriveSmartInput').value.trim();
+  const badge = $('smartTypeBadge');
+  const folderOpts = $('folderOpts');
+  const btn = $('btnDriveImport');
+
+  if (!val) {
+    badge.className = 'smart-type-badge empty';
+    folderOpts.classList.remove('show');
+    btn.textContent = '⬇️ นำเข้ารูปภาพ';
+    $('folderScanResult').classList.remove('show');
+    return;
+  }
+
+  const lines = val.split('\n').map(l => l.trim()).filter(Boolean);
+  const hasFolder = lines.some(l => /\/folders\//.test(l) || (/^[a-zA-Z0-9_-]{20,}$/.test(l) && !l.includes('/')));
+  const hasFile   = lines.some(l => /\/file\/d\/|[?&]id=/.test(l));
+
+  if (lines.length > 1) {
+    badge.className = 'smart-type-badge multi';
+    badge.textContent = `${lines.length} ลิงก์`;
+    folderOpts.classList.remove('show');
+    btn.textContent = `⬇️ นำเข้า ${lines.length} ไฟล์`;
+  } else if (hasFolder) {
+    badge.className = 'smart-type-badge folder';
+    badge.textContent = '📂 โฟลเดอร์';
+    folderOpts.classList.add('show');
+    btn.textContent = '🔍 สแกนและนำเข้าโฟลเดอร์';
+    $('folderScanResult').classList.remove('show');
+  } else {
+    badge.className = 'smart-type-badge file';
+    badge.textContent = '🖼️ ไฟล์รูป';
+    folderOpts.classList.remove('show');
+    btn.textContent = '⬇️ นำเข้ารูปภาพ';
+  }
 }
 
-function toggleApiKey() {
-  $('apikeyRow').classList.toggle('show');
+// ─── SMART IMPORT (auto file vs folder) ──────────
+async function smartDriveImport() {
+  const val = $('gdriveSmartInput').value.trim();
+  if (!val) { showNotif('warning', 'วางลิงก์ Google Drive ก่อนนะครับ'); return; }
+
+  const lines = val.split('\n').map(l => l.trim()).filter(Boolean);
+  const isFolder = lines.length === 1 && (/\/folders\//.test(lines[0]) || (parseFolderId(lines[0]) && !parseGdriveId(lines[0])));
+
+  // Clear logs
+  $('gdriveLog').innerHTML = '';
+  $('folderLog').innerHTML = '';
+  $('folderProgressWrap').classList.remove('show');
+
+  const btn = $('btnDriveImport');
+  btn.disabled = true;
+  $('btnDriveCancel').style.display = '';
+
+  if (isFolder) {
+    // bridge to folder scan
+    $('gdriveFolderUrl').value = lines[0];
+    await scanGdriveFolder();
+    if (GD.folderFiles.length > 0) {
+      $('folderScanResult').classList.add('show');
+      $('folderScanCount').textContent = GD.folderFiles.length + ' รูป';
+      btn.textContent = `⬇️ นำเข้าทั้งหมด (${GD.folderFiles.length} รูป)`;
+      btn.disabled = false;
+      $('btnDriveCancel').style.display = 'none';
+      // Second click will import
+      btn.onclick = async () => {
+        btn.disabled = true;
+        await importGdriveFolder();
+        btn.disabled = false;
+        btn.textContent = '🔍 สแกนและนำเข้าโฟลเดอร์';
+        btn.onclick = smartDriveImport;
+      };
+    } else {
+      btn.disabled = false;
+      $('btnDriveCancel').style.display = 'none';
+    }
+  } else {
+    // bridge to URL import — put lines into hidden compat input
+    $('gdriveUrls').value = lines.join('\n');
+    await importFromGdrive();
+    btn.disabled = false;
+    $('btnDriveCancel').style.display = 'none';
+  }
 }
+
+// ─── ADVANCED TOGGLE ─────────────────────────────
+function toggleAdv() {
+  $('advToggle').classList.toggle('open');
+  $('advBody').classList.toggle('open');
+}
+
+// ─── COMPAT SHIMS (old functions now no-ops) ─────
+function toggleGdrive() {}
+function switchGdriveTab() {}
+function toggleApiKey() {}
 
 // Extract Google Drive file ID from various URL formats
 function parseGdriveId(url) {
@@ -1860,22 +2138,20 @@ async function listFilesViaScrape(folderId, recursive) {
 
 // ─── SCAN FOLDER (UI entry point) ─────────────────
 async function scanGdriveFolder() {
-  const rawUrl = $('gdriveFolderUrl').value.trim();
-  if (!rawUrl) { showNotif('warning', 'ใส่ URL โฟลเดอร์ก่อน'); return; }
+  // read from new smart input OR old hidden compat field
+  const rawUrl = ($('gdriveSmartInput')?.value || $('gdriveFolderUrl')?.value || '').trim();
+  if (!rawUrl) { showNotif('warning', 'วางลิงก์โฟลเดอร์ก่อนนะครับ'); return; }
 
   const folderId = parseFolderId(rawUrl);
-  if (!folderId) { showNotif('error', 'URL โฟลเดอร์ไม่ถูกต้อง'); return; }
+  if (!folderId) { showNotif('error', 'ลิงก์โฟลเดอร์ไม่ถูกต้อง'); return; }
 
-  const apiKey   = $('gdriveApiKey').value.trim();
-  const recursive = $('gdriveRecursive').checked;
+  const apiKey  = $('gdriveApiKey')?.value.trim() || '';
+  const recursive = $('gdriveRecursive')?.checked || false;
 
   GD.folderFiles = [];
   GD.cancelFlag  = false;
-  $('folderLog').innerHTML = '';
-  $('folderFoundWrap').style.display = 'none';
-  $('folderProgressWrap').classList.remove('show');
-  $('btnScanFolder').disabled = true;
-  $('btnCancelFolder').style.display = '';
+  if ($('folderLog')) $('folderLog').innerHTML = '';
+  if ($('folderProgressWrap')) $('folderProgressWrap').classList.remove('show');
 
   try {
     if (apiKey) {
@@ -1889,10 +2165,6 @@ async function scanGdriveFolder() {
     }
 
     const count = GD.folderFiles.length;
-    $('folderFoundBadge').textContent = `📄 พบ ${count} รูป`;
-    $('folderFoundWrap').style.display = count > 0 ? '' : 'none';
-    $('btnImportFolder').textContent = `⬇️ นำเข้าทั้งหมด (${count} รูป)`;
-
     if (count === 0) {
       flog('none', 'warn', '⚠', 'ไม่พบรูปในโฟลเดอร์ — ตรวจสอบการแชร์อีกครั้ง');
       showNotif('warning', 'ไม่พบรูปในโฟลเดอร์');
@@ -1902,10 +2174,8 @@ async function scanGdriveFolder() {
   } catch (err) {
     flog('err', 'err', '✗', `❌ ${err.message}`);
     showNotif('error', `สแกนล้มเหลว: ${err.message}`);
+    throw err;
   }
-
-  $('btnScanFolder').disabled = false;
-  $('btnCancelFolder').style.display = 'none';
 }
 
 // ─── IMPORT ALL FOLDER FILES ──────────────────────
@@ -1917,15 +2187,16 @@ async function importGdriveFolder() {
   const total = files.length;
   let ok = 0, fail = 0;
 
-  $('btnImportFolder').disabled = true;
-  $('btnCancelFolder').style.display = '';
+  // show progress (null-safe for both old and new UI)
+  const cancelBtn = $('btnDriveCancel') || $('btnCancelFolder');
+  if (cancelBtn) cancelBtn.style.display = '';
   const pw = $('folderProgressWrap');
-  pw.classList.add('show');
-  $('folderProgressLabel').textContent = 'กำลังนำเข้า…';
-  $('folderProgressCount').textContent = `0 / ${total}`;
-  $('folderProgressBar').style.width = '0%';
+  if (pw) { pw.classList.add('show'); }
+  if ($('folderProgressLabel')) $('folderProgressLabel').textContent = 'กำลังนำเข้า…';
+  if ($('folderProgressCount')) $('folderProgressCount').textContent = `0 / ${total}`;
+  if ($('folderProgressBar'))   $('folderProgressBar').style.width = '0%';
 
-  const BATCH = 5; // parallel downloads per batch
+  const BATCH = 5;
   for (let i = 0; i < files.length; i += BATCH) {
     if (GD.cancelFlag) break;
     const batch = files.slice(i, i + BATCH);
@@ -1946,24 +2217,21 @@ async function importGdriveFolder() {
 
     const done = Math.min(i + BATCH, total);
     const pct  = Math.round(done / total * 100);
-    $('folderProgressBar').style.width = pct + '%';
-    $('folderProgressCount').textContent = `${done} / ${total}`;
-    $('folderProgressLabel').textContent = `นำเข้าแล้ว ${ok} รูป…`;
+    if ($('folderProgressBar'))   $('folderProgressBar').style.width = pct + '%';
+    if ($('folderProgressCount')) $('folderProgressCount').textContent = `${done} / ${total}`;
+    if ($('folderProgressLabel')) $('folderProgressLabel').textContent = `นำเข้าแล้ว ${ok} รูป…`;
     renderGallery(); updateStats();
     if (S.currentIdx < 0 && S.images.length) showPreview(0);
     await sleep(5);
   }
 
-  $('folderProgressLabel').textContent = GD.cancelFlag ? 'หยุดแล้ว' : 'เสร็จสิ้น';
-  $('btnImportFolder').disabled = false;
-  $('btnCancelFolder').style.display = 'none';
-
+  if ($('folderProgressLabel')) $('folderProgressLabel').textContent = GD.cancelFlag ? 'หยุดแล้ว' : 'เสร็จสิ้น';
+  if (cancelBtn) cancelBtn.style.display = 'none';
   showNotif('success', `✅ นำเข้าจากโฟลเดอร์ ${ok} รูป${fail ? ` (ล้มเหลว ${fail})` : ''}`);
 }
 
 function cancelFolderImport() {
   GD.cancelFlag = true;
-  $('btnCancelFolder').style.display = 'none';
   flog('cancel', 'warn', '⚠', 'กำลังหยุด…');
 }
 
