@@ -32,7 +32,7 @@ from dotenv import load_dotenv
 
 from fastapi import FastAPI, File, Form, HTTPException, Header, UploadFile, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse, StreamingResponse
+from fastapi.responses import JSONResponse, Response, StreamingResponse
 from PIL import Image, ImageDraw, ImageFont
 
 load_dotenv()
@@ -336,6 +336,36 @@ def health():
 # ─────────────────────────────────────────────────────────────
 # Routes — Google Drive
 # ─────────────────────────────────────────────────────────────
+@app.get("/api/drive/file/{file_id}")
+async def proxy_drive_file(file_id: str):
+    """
+    Proxy a single Drive file to the browser.
+    - API key ไม่เปิดเผยใน browser
+    - หลีกเลี่ยงปัญหา CORS เมื่อ browser พยายามดึงโดยตรง
+    - รองรับไฟล์ทั้ง public และ private (ขึ้นอยู่กับสิทธิ์ของ API key / service account)
+    """
+    if not GOOGLE_API_KEY:
+        raise HTTPException(400, "ยังไม่ได้ตั้งค่า GOOGLE_API_KEY ใน server — ใส่ใน .env ก่อน")
+
+    url = f"{DRIVE_API_BASE}/files/{file_id}"
+    async with httpx.AsyncClient() as client:
+        r = await client.get(
+            url,
+            params={"alt": "media", "key": GOOGLE_API_KEY},
+            timeout=DRIVE_DL_TIMEOUT,
+            follow_redirects=True,
+        )
+    if r.status_code == 404:
+        raise HTTPException(404, "ไม่พบไฟล์ใน Drive — ตรวจสอบว่าแชร์ถูกต้อง")
+    if r.status_code == 403:
+        raise HTTPException(403, "ไม่มีสิทธิ์เข้าถึงไฟล์ — ตรวจสอบการแชร์หรือ API Key")
+    if r.status_code != 200:
+        raise HTTPException(r.status_code, f"ดาวน์โหลดไม่ได้: HTTP {r.status_code}")
+
+    content_type = r.headers.get("content-type", "image/jpeg")
+    return Response(content=r.content, media_type=content_type)
+
+
 @app.get("/api/drive/status")
 def drive_status():
     return {

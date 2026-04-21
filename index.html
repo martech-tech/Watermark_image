@@ -697,97 +697,56 @@ input[type=color] { width: 40px; height: 34px; border: 1px solid var(--border); 
             </svg>
             <div class="gdrive-smart-head-text">
               <h4>นำเข้าจาก Google Drive</h4>
-              <p>รองรับทั้งไฟล์เดี่ยว และโฟลเดอร์</p>
+              <p>วาง URL โฟลเดอร์หรือลิงก์ไฟล์รูปภาพ</p>
             </div>
           </div>
 
           <div class="gdrive-smart-body">
+            <!-- textarea ลิงก์ -->
+            <div class="smart-input-wrap">
+              <textarea id="gdriveSmartInput" rows="3"
+                oninput="onSmartInputChange()"
+                placeholder="วางลิงก์ที่นี่ได้เลย…&#10;&#10;• โฟลเดอร์: drive.google.com/drive/folders/…&#10;• ไฟล์เดี่ยว: drive.google.com/file/d/…&#10;• วางหลายลิงก์ก็ได้ (คนละบรรทัด)"></textarea>
+              <div class="smart-type-badge empty" id="smartTypeBadge"></div>
+            </div>
 
-            <!-- ── ยังไม่ได้เข้าสู่ระบบ ── -->
-            <div id="driveSignInSection">
-              <div style="text-align:center;padding:10px 0 14px">
-                <div style="font-size:2.2rem;margin-bottom:10px">🔑</div>
-                <p style="font-size:0.83rem;color:var(--text);font-weight:600;margin-bottom:4px">เข้าสู่ระบบ Google ก่อนนำเข้ารูป</p>
-                <p style="font-size:0.74rem;color:var(--text-muted);margin-bottom:14px;line-height:1.5">
-                  ใช้บัญชี Google ของคุณเพื่อเข้าถึงรูปภาพใน Drive<br>รองรับทั้งไฟล์ส่วนตัวและสาธารณะ
-                </p>
-                <!-- ปุ่มเข้าสู่ระบบ -->
-                <button id="driveSignInBtn" onclick="signInWithGoogle()" class="btn-import drive" style="font-size:0.92rem;padding:13px 18px;gap:10px">
-                  <svg width="20" height="20" viewBox="0 0 48 48">
-                    <path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/>
-                    <path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/>
-                    <path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/>
-                    <path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.18 1.48-4.97 2.31-8.16 2.31-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/>
-                  </svg>
-                  เข้าสู่ระบบด้วย Google
-                </button>
-                <!-- แสดงเมื่อ Client ID ยังไม่ตั้งค่า -->
-                <div id="driveNoClientId" style="display:none;margin-top:12px;padding:9px 11px;background:rgba(255,201,71,0.08);border:1px solid rgba(255,201,71,0.25);border-radius:8px;font-size:0.72rem;color:var(--text-muted);line-height:1.6;text-align:left">
-                  <b style="color:var(--warning)">⚙️ ยังไม่ได้ตั้งค่า:</b><br>
-                  ผู้ดูแลระบบต้องใส่ <code style="background:rgba(255,255,255,0.07);padding:1px 5px;border-radius:3px">GOOGLE_CLIENT_ID</code> ในโค้ด<br>
-                  <span style="font-size:0.68rem">สร้างได้ที่ console.cloud.google.com → OAuth 2.0 Client IDs</span>
+            <!-- ตัวเลือกโฟลเดอร์ (แสดงเมื่อตรวจพบโฟลเดอร์) -->
+            <div class="folder-opts" id="folderOpts">
+              <div class="check-row" style="margin-bottom:8px">
+                <input type="checkbox" id="gdriveRecursive">
+                <span>รวมรูปในโฟลเดอร์ย่อยด้วย</span>
+              </div>
+              <div class="folder-scan-result" id="folderScanResult">
+                <span style="font-size:1.4rem">📂</span>
+                <div>
+                  <div style="font-size:0.72rem;color:var(--text-muted)">พบรูปภาพในโฟลเดอร์</div>
+                  <div class="folder-scan-count" id="folderScanCount">0 รูป</div>
                 </div>
               </div>
             </div>
 
-            <!-- ── เข้าสู่ระบบแล้ว ── -->
-            <div id="driveImportSection" style="display:none">
-              <!-- แถบสถานะผู้ใช้ -->
-              <div style="display:flex;align-items:center;gap:8px;padding:8px 10px;background:rgba(52,168,83,0.08);border:1px solid rgba(52,168,83,0.22);border-radius:8px;margin-bottom:12px">
-                <span style="font-size:1.1rem">✅</span>
-                <div style="flex:1;font-size:0.78rem">
-                  <b style="color:#34a853">เข้าสู่ระบบ Google แล้ว</b>
-                  <div id="driveUserName" style="color:var(--text-muted);font-size:0.7rem"></div>
-                </div>
-                <button onclick="signOutGoogle()" style="font-size:0.7rem;padding:3px 9px;border-radius:5px;border:1px solid var(--border);background:transparent;color:var(--text-muted);cursor:pointer">ออก</button>
-              </div>
-
-              <!-- textarea ลิงก์ -->
-              <div class="smart-input-wrap">
-                <textarea id="gdriveSmartInput" rows="3"
-                  oninput="onSmartInputChange()"
-                  placeholder="วางลิงก์ที่นี่ได้เลย…&#10;&#10;• ลิงก์ไฟล์: drive.google.com/file/d/…&#10;• ลิงก์โฟลเดอร์: drive.google.com/drive/folders/…&#10;• วางหลายลิงก์ก็ได้ (คนละบรรทัด)"></textarea>
-                <div class="smart-type-badge empty" id="smartTypeBadge"></div>
-              </div>
-
-              <!-- ตัวเลือกโฟลเดอร์ (แสดงเมื่อตรวจพบโฟลเดอร์) -->
-              <div class="folder-opts" id="folderOpts">
-                <div class="check-row" style="margin-bottom:8px">
-                  <input type="checkbox" id="gdriveRecursive">
-                  <span>รวมรูปในโฟลเดอร์ย่อยด้วย</span>
-                </div>
-                <div class="folder-scan-result" id="folderScanResult">
-                  <span style="font-size:1.4rem">📂</span>
-                  <div>
-                    <div style="font-size:0.72rem;color:var(--text-muted)">พบรูปภาพในโฟลเดอร์</div>
-                    <div class="folder-scan-count" id="folderScanCount">0 รูป</div>
-                  </div>
-                </div>
-              </div>
-
-              <!-- ปุ่มนำเข้า -->
-              <button class="btn-import drive" id="btnDriveImport" onclick="smartDriveImport()">
-                ⬇️ นำเข้ารูปภาพ
+            <!-- ปุ่มนำเข้า -->
+            <button class="btn-import drive" id="btnDriveImport" onclick="smartDriveImport()">
+              ⬇️ นำเข้ารูปภาพ
+            </button>
+            <div style="display:flex;justify-content:center;margin-top:6px">
+              <button class="btn btn-secondary" style="display:none;padding:4px 12px;font-size:0.72rem" id="btnDriveCancel" onclick="GD.cancelFlag=true;this.style.display='none'">
+                ✕ หยุด
               </button>
-              <div style="display:flex;justify-content:center;margin-top:6px">
-                <button class="btn btn-secondary" style="display:none;padding:4px 12px;font-size:0.72rem" id="btnDriveCancel" onclick="GD.cancelFlag=true;this.style.display='none'">
-                  ✕ หยุด
-                </button>
-              </div>
-
-              <!-- แถบความคืบหน้า -->
-              <div class="folder-progress-wrap" id="folderProgressWrap">
-                <div class="folder-progress-top">
-                  <span id="folderProgressLabel">กำลังโหลด…</span>
-                  <b id="folderProgressCount">0 / 0</b>
-                </div>
-                <div class="progress-bar"><div class="progress-fill" id="folderProgressBar" style="width:0%"></div></div>
-              </div>
-
-              <!-- log รายไฟล์ -->
-              <div class="gdrive-log" id="gdriveLog" style="margin-top:6px"></div>
-              <div class="gdrive-log" id="folderLog"  style="margin-top:2px"></div>
             </div>
+
+            <!-- แถบความคืบหน้า -->
+            <div class="folder-progress-wrap" id="folderProgressWrap">
+              <div class="folder-progress-top">
+                <span id="folderProgressLabel">กำลังโหลด…</span>
+                <b id="folderProgressCount">0 / 0</b>
+              </div>
+              <div class="progress-bar"><div class="progress-fill" id="folderProgressBar" style="width:0%"></div></div>
+            </div>
+
+            <!-- log รายไฟล์ -->
+            <div class="gdrive-log" id="gdriveLog" style="margin-top:6px"></div>
+            <div class="gdrive-log" id="folderLog"  style="margin-top:2px"></div>
 
             <!-- hidden compat -->
             <input type="hidden" id="gdriveFolderUrl">
@@ -1133,8 +1092,6 @@ input[type=color] { width: 40px; height: 34px; border: 1px solid var(--border); 
 <div id="notifications"></div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
-<!-- Google Identity Services — OAuth 2.0 (ใช้สำหรับ Drive import) -->
-<script src="https://accounts.google.com/gsi/client" async></script>
 <script>
 // ═══════════════════════════════════════════════════
 // STATE
@@ -1168,13 +1125,12 @@ const $ = id => document.getElementById(id);
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 
 // ═══════════════════════════════════════════════════
-// GOOGLE OAUTH 2.0 CONFIG
+// BACKEND CONFIG
 // ═══════════════════════════════════════════════════
-// 👇 ผู้ดูแลระบบ: ใส่ OAuth 2.0 Client ID ของคุณที่นี่
-// สร้างได้ที่ console.cloud.google.com → APIs & Services → Credentials → OAuth 2.0 Client IDs
-// ประเภท: "Web application"  |  Authorized JavaScript origins: ใส่ URL ของเว็บคุณ
-const GOOGLE_CLIENT_ID = 'YOUR_CLIENT_ID.apps.googleusercontent.com';
-const DRIVE_SCOPE = 'https://www.googleapis.com/auth/drive.readonly';
+// 👇 ผู้ดูแลระบบ: ใส่ URL ของ Backend Server ที่นี่
+// ถ้า HTML และ Backend อยู่บน origin เดียวกัน → เว้นว่างไว้ได้ (ใช้ relative URL)
+// ถ้า Backend อยู่คนละ origin เช่น http://localhost:8000 → ใส่เต็มๆ
+const BACKEND_URL = 'http://localhost:8000';
 
 // ═══════════════════════════════════════════════════
 // TABS
@@ -1838,9 +1794,8 @@ const GD = {
   cancelFlag: false,
 };
 
-// OAuth state
-let _tokenClient  = null;  // google.accounts.oauth2 token client
-let _accessToken  = null;  // Bearer token หลังล็อกอิน
+// ─── BACKEND URL helper ───────────────────────────
+function _base() { return BACKEND_URL.replace(/\/$/, ''); }
 
 // ─── SOURCE PICKER ───────────────────────────────
 function selectSource(src) {
@@ -1848,71 +1803,6 @@ function selectSource(src) {
     $('src' + s[0].toUpperCase() + s.slice(1)).classList.toggle('active', s === src);
     $('panel' + s[0].toUpperCase() + s.slice(1)).classList.toggle('active', s === src);
   });
-}
-
-// ─── OAUTH INIT (เรียกหลัง GIS โหลดเสร็จ) ────────
-function initGoogleAuth() {
-  // Client ID ยังไม่ตั้งค่า
-  if (!GOOGLE_CLIENT_ID || GOOGLE_CLIENT_ID.startsWith('YOUR_')) {
-    $('driveNoClientId').style.display = '';
-    $('driveSignInBtn').disabled = true;
-    $('driveSignInBtn').style.opacity = '0.45';
-    $('driveSignInBtn').title = 'ยังไม่ได้ตั้งค่า Client ID';
-    return;
-  }
-  // รอ GIS โหลดเสร็จ (async script)
-  if (typeof google === 'undefined' || !google?.accounts?.oauth2) {
-    setTimeout(initGoogleAuth, 400);
-    return;
-  }
-  _tokenClient = google.accounts.oauth2.initTokenClient({
-    client_id: GOOGLE_CLIENT_ID,
-    scope: DRIVE_SCOPE,
-    callback: (resp) => {
-      if (resp.error) {
-        showNotif('error', '❌ เข้าสู่ระบบล้มเหลว: ' + resp.error);
-        return;
-      }
-      _accessToken = resp.access_token;
-      _onGoogleSignedIn();
-    },
-  });
-}
-
-// เรียกเมื่อ Sign-in สำเร็จ
-async function _onGoogleSignedIn() {
-  $('driveSignInSection').style.display = 'none';
-  $('driveImportSection').style.display = 'block';
-  // ลอง fetch profile เพื่อแสดงชื่อ
-  try {
-    const r = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
-      headers: { Authorization: 'Bearer ' + _accessToken },
-    });
-    const u = await r.json();
-    if (u.name) $('driveUserName').textContent = u.name + (u.email ? ' — ' + u.email : '');
-  } catch { /* ไม่ได้ก็ไม่เป็นไร */ }
-  showNotif('success', '✅ เข้าสู่ระบบ Google สำเร็จ');
-}
-
-// ปุ่ม "เข้าสู่ระบบด้วย Google"
-function signInWithGoogle() {
-  if (!_tokenClient) {
-    showNotif('error', 'Google Auth ยังไม่พร้อม — รอสักครู่แล้วลองใหม่');
-    return;
-  }
-  _tokenClient.requestAccessToken({ prompt: 'consent' });
-}
-
-// ออกจากระบบ
-function signOutGoogle() {
-  if (_accessToken) {
-    google.accounts.oauth2.revoke(_accessToken, () => {});
-    _accessToken = null;
-  }
-  $('driveSignInSection').style.display = '';
-  $('driveImportSection').style.display = 'none';
-  $('driveUserName').textContent = '';
-  showNotif('info', 'ออกจากระบบ Google แล้ว');
 }
 
 // ─── SMART URL DETECTOR ──────────────────────────
@@ -2060,27 +1950,22 @@ async function loadImageFromBlob(blob, filename) {
 }
 
 async function fetchGdriveImage(fileId) {
-  // Strategy 1: OAuth — ดาวน์โหลดด้วย access token (ทำงานกับทุกไฟล์ที่เข้าถึงได้)
-  if (_accessToken) {
-    try {
-      const url = `https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`;
-      const res = await fetch(url, {
-        headers: { Authorization: 'Bearer ' + _accessToken },
-        signal: AbortSignal.timeout(30000),
-      });
-      if (res.ok) {
-        const ct  = res.headers.get('content-type') || 'image/jpeg';
-        const blob = await res.blob();
-        if (blob.size >= 500) {
-          const ext = ct.split('/')[1]?.split(';')[0] || 'jpg';
-          return { blob, ext, strategy: 'oauth' };
-        }
-      }
-    } catch { /* ลองวิธีต่อไป */ }
-  }
-  // Strategy 2: thumbnail (ใช้ได้กับไฟล์สาธารณะ ไม่ต้องล็อกอิน)
-  const thumbUrl = `https://drive.google.com/thumbnail?id=${fileId}&sz=w2048`;
+  // Strategy 1: Backend proxy — API key อยู่ที่ server, ไม่เปิดเผยใน browser
   try {
+    const url = `${_base()}/api/drive/file/${fileId}`;
+    const res = await fetch(url, { signal: AbortSignal.timeout(30000) });
+    if (res.ok) {
+      const ct   = res.headers.get('content-type') || 'image/jpeg';
+      const blob = await res.blob();
+      if (blob.size >= 500) {
+        const ext = ct.split('/')[1]?.split(';')[0] || 'jpg';
+        return { blob, ext, strategy: 'backend' };
+      }
+    }
+  } catch { /* ลองวิธีต่อไป */ }
+  // Strategy 2: thumbnail (fallback สำหรับไฟล์สาธารณะ)
+  try {
+    const thumbUrl = `https://drive.google.com/thumbnail?id=${fileId}&sz=w2048`;
     const res = await fetch(thumbUrl, { signal: AbortSignal.timeout(15000) });
     if (res.ok) {
       const ct = res.headers.get('content-type') || '';
@@ -2093,7 +1978,7 @@ async function fetchGdriveImage(fileId) {
       }
     }
   } catch { /* ล้มเหลว */ }
-  throw new Error('ดึงรูปไม่ได้ — กรุณาเข้าสู่ระบบ Google หรือตรวจสอบการแชร์ไฟล์');
+  throw new Error('ดาวน์โหลดไม่ได้ — ตรวจสอบว่า Backend กำลังทำงาน และ GOOGLE_API_KEY ตั้งค่าแล้ว');
 }
 
 async function importFromGdrive() {
@@ -2162,59 +2047,13 @@ function flog(id, type, icon, text) {
   log.scrollTop = log.scrollHeight;
 }
 
-// ─── LIST FILES via OAuth (Drive API v3) ──────────
-async function listFilesViaOAuth(folderId, recursive, depth = 0) {
-  if (!_accessToken) throw new Error('ยังไม่ได้เข้าสู่ระบบ Google — กดปุ่ม "เข้าสู่ระบบด้วย Google" ก่อน');
-
-  let files = [];
-  let pageToken = null;
-  const indent = '  '.repeat(depth);
-
-  flog(`api-${folderId}`, 'load', '⟳', `${indent}📂 กำลังสแกนโฟลเดอร์…`);
-
-  do {
-    const q = encodeURIComponent(`'${folderId}' in parents and trashed=false`);
-    let url = `https://www.googleapis.com/drive/v3/files?q=${q}&fields=files(id,name,mimeType),nextPageToken&pageSize=1000`;
-    if (pageToken) url += `&pageToken=${pageToken}`;
-
-    const res = await fetch(url, {
-      headers: { Authorization: 'Bearer ' + _accessToken },
-    });
-    const data = await res.json();
-    if (data.error) throw new Error(`Drive API: ${data.error.message}`);
-
-    const imgs = (data.files || []).filter(f => f.mimeType.startsWith('image/'));
-    const dirs = (data.files || []).filter(f => f.mimeType === 'application/vnd.google-apps.folder');
-
-    files = files.concat(imgs);
-    flog(`api-${folderId}`, 'ok', '✓', `${indent}📂 พบ ${imgs.length} รูป${dirs.length ? `, ${dirs.length} โฟลเดอร์ย่อย` : ''}`);
-
-    if (recursive && dirs.length) {
-      for (const dir of dirs) {
-        if (GD.cancelFlag) break;
-        const sub = await listFilesViaOAuth(dir.id, true, depth + 1);
-        files = files.concat(sub);
-      }
-    }
-    pageToken = data.nextPageToken;
-  } while (pageToken && !GD.cancelFlag);
-
-  return files;
-}
-
-// ─── SCAN FOLDER (UI entry point) ─────────────────
+// ─── SCAN FOLDER via Backend ──────────────────────
 async function scanGdriveFolder() {
   const rawUrl = ($('gdriveSmartInput')?.value || $('gdriveFolderUrl')?.value || '').trim();
-  if (!rawUrl) { showNotif('warning', 'วางลิงก์โฟลเดอร์ก่อนนะครับ'); return; }
+  if (!rawUrl) { showNotif('warning', 'วางลิงก์โฟลเดอร์ก่อน'); return; }
 
   const folderId = parseFolderId(rawUrl);
   if (!folderId) { showNotif('error', 'ลิงก์โฟลเดอร์ไม่ถูกต้อง'); return; }
-
-  // ต้องล็อกอิน Google เพื่อสแกนโฟลเดอร์
-  if (!_accessToken) {
-    showNotif('warning', '⚠️ กรุณาเข้าสู่ระบบ Google ก่อนนำเข้าจากโฟลเดอร์');
-    return;
-  }
 
   const recursive = $('gdriveRecursive')?.checked || false;
 
@@ -2223,18 +2062,30 @@ async function scanGdriveFolder() {
   if ($('folderLog')) $('folderLog').innerHTML = '';
   if ($('folderProgressWrap')) $('folderProgressWrap').classList.remove('show');
 
-  try {
-    GD.folderFiles = await listFilesViaOAuth(folderId, recursive);
+  flog('scan', 'load', '⟳', 'กำลังสแกนโฟลเดอร์ผ่าน Backend…');
 
-    if (GD.cancelFlag) {
-      flog('cancel', 'warn', '⚠', `หยุดการสแกน — พบ ${GD.folderFiles.length} รูปก่อนหยุด`);
+  try {
+    const fd = new FormData();
+    fd.append('folder_id', folderId);
+    fd.append('recursive', recursive);
+
+    const r = await fetch(`${_base()}/api/drive/list-folder`, {
+      method: 'POST', body: fd,
+      signal: AbortSignal.timeout(30000),
+    });
+    if (!r.ok) {
+      const err = await r.json().catch(() => ({}));
+      throw new Error(err.detail || `HTTP ${r.status}`);
     }
+    const data = await r.json();
+    GD.folderFiles = data.files || [];
 
     const count = GD.folderFiles.length;
     if (count === 0) {
-      flog('none', 'warn', '⚠', 'ไม่พบรูปในโฟลเดอร์');
+      flog('none', 'warn', '⚠', 'ไม่พบรูปในโฟลเดอร์ — ตรวจสอบว่าแชร์ถูกต้อง');
       showNotif('warning', 'ไม่พบรูปในโฟลเดอร์');
     } else {
+      flog('done', 'ok', '✓', `พบ ${count} รูปภาพ`);
       showNotif('success', `🔍 สแกนเสร็จ พบ ${count} รูป`);
     }
   } catch (err) {
@@ -2303,8 +2154,6 @@ function cancelFolderImport() {
 
 // ─── INIT ────────────────────────────────────────
 showNotif('info','👋 ยินดีต้อนรับ — อัพโหลดรูปเพื่อเริ่มต้น');
-// เริ่มต้น Google OAuth (รอ GIS script โหลดเสร็จ)
-setTimeout(initGoogleAuth, 800);
 </script>
 </body>
 </html>
