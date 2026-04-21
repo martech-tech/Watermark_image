@@ -630,9 +630,9 @@ input[type=color] { width: 40px; height: 34px; border: 1px solid var(--border); 
   <!-- ═══ SIDEBAR ═══════════════════════════════ -->
   <aside class="sidebar">
     <div class="tab-bar">
-      <button class="tab-btn active" onclick="switchTab('upload')">📁 อัพโหลด</button>
-      <button class="tab-btn" onclick="switchTab('watermark')">💧 ลายน้ำ</button>
-      <button class="tab-btn" onclick="switchTab('export')">⬇️ ส่งออก</button>
+      <button class="tab-btn active" onclick="switchTab('upload')">① เพิ่มรูป</button>
+      <button class="tab-btn" onclick="switchTab('watermark')">② ตั้งลายน้ำ</button>
+      <button class="tab-btn" onclick="switchTab('export')">③ ดาวน์โหลด</button>
     </div>
 
     <!-- UPLOAD TAB -->
@@ -696,114 +696,100 @@ input[type=color] { width: 40px; height: 34px; border: 1px solid var(--border); 
               <path d="M43.65 25L29.4 52.5h29.9z" fill="#00ac47"/>
             </svg>
             <div class="gdrive-smart-head-text">
-              <h4>วางลิงก์ Google Drive</h4>
-              <p>รองรับทั้งไฟล์เดี่ยว และโฟลเดอร์อัตโนมัติ</p>
+              <h4>นำเข้าจาก Google Drive</h4>
+              <p>รองรับทั้งไฟล์เดี่ยว และโฟลเดอร์</p>
             </div>
           </div>
 
           <div class="gdrive-smart-body">
-            <!-- Smart input — auto-detects file vs folder -->
-            <div class="smart-input-wrap">
-              <textarea id="gdriveSmartInput" rows="3"
-                oninput="onSmartInputChange()"
-                placeholder="วางลิงก์ที่นี่ได้เลย…&#10;&#10;• ลิงก์ไฟล์: drive.google.com/file/d/…&#10;• ลิงก์โฟลเดอร์: drive.google.com/drive/folders/…&#10;• วางหลายลิงก์ก็ได้ (คนละบรรทัด)"></textarea>
-              <div class="smart-type-badge empty" id="smartTypeBadge"></div>
-            </div>
 
-            <!-- share notice -->
-            <div class="gdrive-share-notice">
-              <span>⚠️</span>
-              <span><b>ก่อนใช้งาน:</b> ต้องตั้งค่าการแชร์ไฟล์/โฟลเดอร์ใน Drive เป็น<br>
-              <b style="color:var(--text)">"ทุกคนที่มีลิงก์สามารถดูได้"</b></span>
-            </div>
-
-            <!-- folder-only options (shown when folder URL detected) -->
-            <div class="folder-opts" id="folderOpts">
-              <div class="check-row" style="margin-bottom:8px">
-                <input type="checkbox" id="gdriveRecursive">
-                <span>รวมรูปในโฟลเดอร์ย่อยด้วย</span>
-              </div>
-              <!-- scan result -->
-              <div class="folder-scan-result" id="folderScanResult">
-                <span style="font-size:1.4rem">📂</span>
-                <div>
-                  <div style="font-size:0.72rem;color:var(--text-muted)">พบรูปภาพในโฟลเดอร์</div>
-                  <div class="folder-scan-count" id="folderScanCount">0 รูป</div>
+            <!-- ── ยังไม่ได้เข้าสู่ระบบ ── -->
+            <div id="driveSignInSection">
+              <div style="text-align:center;padding:10px 0 14px">
+                <div style="font-size:2.2rem;margin-bottom:10px">🔑</div>
+                <p style="font-size:0.83rem;color:var(--text);font-weight:600;margin-bottom:4px">เข้าสู่ระบบ Google ก่อนนำเข้ารูป</p>
+                <p style="font-size:0.74rem;color:var(--text-muted);margin-bottom:14px;line-height:1.5">
+                  ใช้บัญชี Google ของคุณเพื่อเข้าถึงรูปภาพใน Drive<br>รองรับทั้งไฟล์ส่วนตัวและสาธารณะ
+                </p>
+                <!-- ปุ่มเข้าสู่ระบบ -->
+                <button id="driveSignInBtn" onclick="signInWithGoogle()" class="btn-import drive" style="font-size:0.92rem;padding:13px 18px;gap:10px">
+                  <svg width="20" height="20" viewBox="0 0 48 48">
+                    <path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/>
+                    <path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/>
+                    <path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/>
+                    <path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.18 1.48-4.97 2.31-8.16 2.31-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/>
+                  </svg>
+                  เข้าสู่ระบบด้วย Google
+                </button>
+                <!-- แสดงเมื่อ Client ID ยังไม่ตั้งค่า -->
+                <div id="driveNoClientId" style="display:none;margin-top:12px;padding:9px 11px;background:rgba(255,201,71,0.08);border:1px solid rgba(255,201,71,0.25);border-radius:8px;font-size:0.72rem;color:var(--text-muted);line-height:1.6;text-align:left">
+                  <b style="color:var(--warning)">⚙️ ยังไม่ได้ตั้งค่า:</b><br>
+                  ผู้ดูแลระบบต้องใส่ <code style="background:rgba(255,255,255,0.07);padding:1px 5px;border-radius:3px">GOOGLE_CLIENT_ID</code> ในโค้ด<br>
+                  <span style="font-size:0.68rem">สร้างได้ที่ console.cloud.google.com → OAuth 2.0 Client IDs</span>
                 </div>
               </div>
             </div>
 
-            <!-- main action button — label changes by type -->
-            <button class="btn-import drive" id="btnDriveImport" onclick="smartDriveImport()">
-              ⬇️ นำเข้ารูปภาพ
-            </button>
-            <div style="display:flex;justify-content:center;margin-top:6px">
-              <button class="btn btn-secondary" style="display:none;padding:4px 12px;font-size:0.72rem" id="btnDriveCancel" onclick="GD.cancelFlag=true;this.style.display='none'">
-                ✕ หยุด
+            <!-- ── เข้าสู่ระบบแล้ว ── -->
+            <div id="driveImportSection" style="display:none">
+              <!-- แถบสถานะผู้ใช้ -->
+              <div style="display:flex;align-items:center;gap:8px;padding:8px 10px;background:rgba(52,168,83,0.08);border:1px solid rgba(52,168,83,0.22);border-radius:8px;margin-bottom:12px">
+                <span style="font-size:1.1rem">✅</span>
+                <div style="flex:1;font-size:0.78rem">
+                  <b style="color:#34a853">เข้าสู่ระบบ Google แล้ว</b>
+                  <div id="driveUserName" style="color:var(--text-muted);font-size:0.7rem"></div>
+                </div>
+                <button onclick="signOutGoogle()" style="font-size:0.7rem;padding:3px 9px;border-radius:5px;border:1px solid var(--border);background:transparent;color:var(--text-muted);cursor:pointer">ออก</button>
+              </div>
+
+              <!-- textarea ลิงก์ -->
+              <div class="smart-input-wrap">
+                <textarea id="gdriveSmartInput" rows="3"
+                  oninput="onSmartInputChange()"
+                  placeholder="วางลิงก์ที่นี่ได้เลย…&#10;&#10;• ลิงก์ไฟล์: drive.google.com/file/d/…&#10;• ลิงก์โฟลเดอร์: drive.google.com/drive/folders/…&#10;• วางหลายลิงก์ก็ได้ (คนละบรรทัด)"></textarea>
+                <div class="smart-type-badge empty" id="smartTypeBadge"></div>
+              </div>
+
+              <!-- ตัวเลือกโฟลเดอร์ (แสดงเมื่อตรวจพบโฟลเดอร์) -->
+              <div class="folder-opts" id="folderOpts">
+                <div class="check-row" style="margin-bottom:8px">
+                  <input type="checkbox" id="gdriveRecursive">
+                  <span>รวมรูปในโฟลเดอร์ย่อยด้วย</span>
+                </div>
+                <div class="folder-scan-result" id="folderScanResult">
+                  <span style="font-size:1.4rem">📂</span>
+                  <div>
+                    <div style="font-size:0.72rem;color:var(--text-muted)">พบรูปภาพในโฟลเดอร์</div>
+                    <div class="folder-scan-count" id="folderScanCount">0 รูป</div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- ปุ่มนำเข้า -->
+              <button class="btn-import drive" id="btnDriveImport" onclick="smartDriveImport()">
+                ⬇️ นำเข้ารูปภาพ
               </button>
-            </div>
-
-            <!-- progress -->
-            <div class="folder-progress-wrap" id="folderProgressWrap">
-              <div class="folder-progress-top">
-                <span id="folderProgressLabel">กำลังโหลด…</span>
-                <b id="folderProgressCount">0 / 0</b>
-              </div>
-              <div class="progress-bar"><div class="progress-fill" id="folderProgressBar" style="width:0%"></div></div>
-            </div>
-
-            <!-- per-file log -->
-            <div class="gdrive-log" id="gdriveLog" style="margin-top:6px"></div>
-            <div class="gdrive-log" id="folderLog"  style="margin-top:2px"></div>
-
-            <!-- advanced toggle -->
-            <div class="adv-toggle" id="advToggle" onclick="toggleAdv()">
-              <svg width="10" height="10" viewBox="0 0 10 10" fill="currentColor"><path d="M5 7L1 3h8z"/></svg>
-              ตั้งค่าขั้นสูง
-            </div>
-            <div class="adv-body" id="advBody">
-
-              <!-- Mode selector -->
-              <div style="display:flex;gap:6px;margin-bottom:10px">
-                <button class="flb-btn active" id="modeClientBtn" onclick="setDriveMode('client')"
-                  style="flex:1;border-color:var(--primary);color:var(--primary)">
-                  🌐 Browser
-                </button>
-                <button class="flb-btn" id="modeServerBtn" onclick="setDriveMode('server')" style="flex:1">
-                  🖥️ Backend
+              <div style="display:flex;justify-content:center;margin-top:6px">
+                <button class="btn btn-secondary" style="display:none;padding:4px 12px;font-size:0.72rem" id="btnDriveCancel" onclick="GD.cancelFlag=true;this.style.display='none'">
+                  ✕ หยุด
                 </button>
               </div>
 
-              <!-- CLIENT mode: API key in browser -->
-              <div id="advClientOpts">
-                <label>Google API Key <span style="font-size:0.68rem;color:var(--text-muted)">(ไม่บังคับ)</span></label>
-                <input type="password" id="gdriveApiKey" placeholder="AIzaSy…">
-                <div class="gdrive-share-notice" style="margin-top:7px">
-                  ไม่ใส่ → scrape mode ~200 รูป/โฟลเดอร์<br>
-                  ใส่แล้ว → รองรับไม่จำกัด
+              <!-- แถบความคืบหน้า -->
+              <div class="folder-progress-wrap" id="folderProgressWrap">
+                <div class="folder-progress-top">
+                  <span id="folderProgressLabel">กำลังโหลด…</span>
+                  <b id="folderProgressCount">0 / 0</b>
                 </div>
+                <div class="progress-bar"><div class="progress-fill" id="folderProgressBar" style="width:0%"></div></div>
               </div>
 
-              <!-- SERVER mode: backend does the Drive API call -->
-              <div id="advServerOpts" style="display:none">
-                <label>URL ของ Backend Server</label>
-                <input type="text" id="driveApiBaseUrl" value="http://localhost:8000" placeholder="http://localhost:8000">
-                <label style="margin-top:8px">Google API Key <span style="font-size:0.68rem;color:var(--text-muted)">(ถ้า server ไม่มี)</span></label>
-                <input type="password" id="driveServerApiKey" placeholder="AIzaSy… (เว้นว่างถ้า server ตั้งไว้แล้ว)">
-                <button class="btn btn-secondary" style="width:100%;margin-top:7px;font-size:0.78rem" onclick="checkDriveBackend()">
-                  🔌 ทดสอบ Backend
-                </button>
-                <div id="driveBackendStatus" style="font-size:0.72rem;margin-top:5px;color:var(--text-muted)"></div>
-                <div style="margin-top:8px;padding:7px 9px;background:rgba(52,168,83,0.07);border:1px solid rgba(52,168,83,0.2);border-radius:7px;font-size:0.7rem;color:var(--text-muted);line-height:1.6">
-                  <b style="color:#34a853">โหมดนี้ดีกว่า Browser เพราะ:</b><br>
-                  ✅ API Key ไม่เปิดเผยใน browser<br>
-                  ✅ ดาวน์โหลดได้ไม่จำกัด ไม่มี CORS<br>
-                  ✅ ประมวลผล watermark ที่ server → ได้ ZIP ทันที
-                </div>
-              </div>
+              <!-- log รายไฟล์ -->
+              <div class="gdrive-log" id="gdriveLog" style="margin-top:6px"></div>
+              <div class="gdrive-log" id="folderLog"  style="margin-top:2px"></div>
             </div>
 
-            <!-- hidden compat IDs used by old JS -->
+            <!-- hidden compat -->
             <input type="hidden" id="gdriveFolderUrl">
             <input type="hidden" id="gdriveUrls">
           </div>
@@ -1028,37 +1014,6 @@ input[type=color] { width: 40px; height: 34px; border: 1px solid var(--border); 
         <b style="color:var(--warning)">⚡ ประสิทธิภาพสูง</b><br>
         ประมวลผลแบบ batch — รองรับ 10,000+ รูปโดยไม่ค้าง
       </div>
-
-      <!-- ── BACKEND API ─────────────────────────── -->
-      <div class="section" style="margin-top:18px">
-        <div class="section-title">Backend API (Server Mode)</div>
-        <div style="padding:11px;background:var(--surface3);border-radius:10px;border:1px solid var(--border2)">
-          <div class="check-row" style="margin-bottom:10px">
-            <input type="checkbox" id="useBackendApi" onchange="toggleBackendApi()">
-            <span style="font-size:0.83rem;font-weight:700">ใช้ Backend API</span>
-          </div>
-          <div id="backendApiOpts" style="display:none">
-            <label>URL ของ API Server</label>
-            <input type="text" id="apiBaseUrl" value="http://localhost:8000" placeholder="http://localhost:8000">
-            <button class="btn btn-secondary" style="width:100%;margin-top:7px;font-size:0.78rem" onclick="checkApiHealth()">
-              🔌 ทดสอบการเชื่อมต่อ
-            </button>
-            <div id="apiHealthStatus" style="font-size:0.72rem;margin-top:6px;color:var(--text-muted)"></div>
-            <div style="margin-top:9px;padding:8px 10px;background:rgba(66,133,244,0.07);border:1px solid rgba(66,133,244,0.18);border-radius:8px;font-size:0.71rem;color:var(--text-muted);line-height:1.6">
-              <b style="color:#4285f4">วิธีเริ่ม Backend:</b><br>
-              <code style="font-size:0.69rem">cd backend</code><br>
-              <code style="font-size:0.69rem">pip install -r requirements.txt</code><br>
-              <code style="font-size:0.69rem">uvicorn main:app --port 8000</code>
-            </div>
-            <button class="btn btn-success btn-full" style="margin-top:10px" onclick="processAndDownloadViaApi()">
-              🖥️ ประมวลผลผ่าน Server &amp; ดาวน์โหลด ZIP
-            </button>
-            <button class="btn btn-secondary btn-full" style="margin-top:7px" onclick="downloadSingleViaApi()">
-              📄 ดาวน์โหลดภาพปัจจุบัน (Server)
-            </button>
-          </div>
-        </div>
-      </div>
     </div>
   </aside>
 
@@ -1178,6 +1133,8 @@ input[type=color] { width: 40px; height: 34px; border: 1px solid var(--border); 
 <div id="notifications"></div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<!-- Google Identity Services — OAuth 2.0 (ใช้สำหรับ Drive import) -->
+<script src="https://accounts.google.com/gsi/client" async></script>
 <script>
 // ═══════════════════════════════════════════════════
 // STATE
@@ -1209,6 +1166,15 @@ let nextId = 0;
 // ─── HELPERS ────────────────────────────────────────
 const $ = id => document.getElementById(id);
 const sleep = ms => new Promise(r => setTimeout(r, ms));
+
+// ═══════════════════════════════════════════════════
+// GOOGLE OAUTH 2.0 CONFIG
+// ═══════════════════════════════════════════════════
+// 👇 ผู้ดูแลระบบ: ใส่ OAuth 2.0 Client ID ของคุณที่นี่
+// สร้างได้ที่ console.cloud.google.com → APIs & Services → Credentials → OAuth 2.0 Client IDs
+// ประเภท: "Web application"  |  Authorized JavaScript origins: ใส่ URL ของเว็บคุณ
+const GOOGLE_CLIENT_ID = 'YOUR_CLIENT_ID.apps.googleusercontent.com';
+const DRIVE_SCOPE = 'https://www.googleapis.com/auth/drive.readonly';
 
 // ═══════════════════════════════════════════════════
 // TABS
@@ -1864,13 +1830,17 @@ document.addEventListener('keydown',e=>{
 window.addEventListener('resize',()=>{if(S.currentIdx>=0) fitZoom();});
 
 // ═══════════════════════════════════════════════════
-// GOOGLE DRIVE IMPORT
+// GOOGLE DRIVE IMPORT  (OAuth 2.0)
 // ═══════════════════════════════════════════════════
 
 const GD = {
-  folderFiles: [],    // { id, name, mimeType } from API/scrape
+  folderFiles: [],    // { id, name, mimeType } จาก Drive API
   cancelFlag: false,
 };
+
+// OAuth state
+let _tokenClient  = null;  // google.accounts.oauth2 token client
+let _accessToken  = null;  // Bearer token หลังล็อกอิน
 
 // ─── SOURCE PICKER ───────────────────────────────
 function selectSource(src) {
@@ -1878,6 +1848,71 @@ function selectSource(src) {
     $('src' + s[0].toUpperCase() + s.slice(1)).classList.toggle('active', s === src);
     $('panel' + s[0].toUpperCase() + s.slice(1)).classList.toggle('active', s === src);
   });
+}
+
+// ─── OAUTH INIT (เรียกหลัง GIS โหลดเสร็จ) ────────
+function initGoogleAuth() {
+  // Client ID ยังไม่ตั้งค่า
+  if (!GOOGLE_CLIENT_ID || GOOGLE_CLIENT_ID.startsWith('YOUR_')) {
+    $('driveNoClientId').style.display = '';
+    $('driveSignInBtn').disabled = true;
+    $('driveSignInBtn').style.opacity = '0.45';
+    $('driveSignInBtn').title = 'ยังไม่ได้ตั้งค่า Client ID';
+    return;
+  }
+  // รอ GIS โหลดเสร็จ (async script)
+  if (typeof google === 'undefined' || !google?.accounts?.oauth2) {
+    setTimeout(initGoogleAuth, 400);
+    return;
+  }
+  _tokenClient = google.accounts.oauth2.initTokenClient({
+    client_id: GOOGLE_CLIENT_ID,
+    scope: DRIVE_SCOPE,
+    callback: (resp) => {
+      if (resp.error) {
+        showNotif('error', '❌ เข้าสู่ระบบล้มเหลว: ' + resp.error);
+        return;
+      }
+      _accessToken = resp.access_token;
+      _onGoogleSignedIn();
+    },
+  });
+}
+
+// เรียกเมื่อ Sign-in สำเร็จ
+async function _onGoogleSignedIn() {
+  $('driveSignInSection').style.display = 'none';
+  $('driveImportSection').style.display = 'block';
+  // ลอง fetch profile เพื่อแสดงชื่อ
+  try {
+    const r = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
+      headers: { Authorization: 'Bearer ' + _accessToken },
+    });
+    const u = await r.json();
+    if (u.name) $('driveUserName').textContent = u.name + (u.email ? ' — ' + u.email : '');
+  } catch { /* ไม่ได้ก็ไม่เป็นไร */ }
+  showNotif('success', '✅ เข้าสู่ระบบ Google สำเร็จ');
+}
+
+// ปุ่ม "เข้าสู่ระบบด้วย Google"
+function signInWithGoogle() {
+  if (!_tokenClient) {
+    showNotif('error', 'Google Auth ยังไม่พร้อม — รอสักครู่แล้วลองใหม่');
+    return;
+  }
+  _tokenClient.requestAccessToken({ prompt: 'consent' });
+}
+
+// ออกจากระบบ
+function signOutGoogle() {
+  if (_accessToken) {
+    google.accounts.oauth2.revoke(_accessToken, () => {});
+    _accessToken = null;
+  }
+  $('driveSignInSection').style.display = '';
+  $('driveImportSection').style.display = 'none';
+  $('driveUserName').textContent = '';
+  showNotif('info', 'ออกจากระบบ Google แล้ว');
 }
 
 // ─── SMART URL DETECTOR ──────────────────────────
@@ -1896,8 +1931,7 @@ function onSmartInputChange() {
   }
 
   const lines = val.split('\n').map(l => l.trim()).filter(Boolean);
-  const hasFolder = lines.some(l => /\/folders\//.test(l) || (/^[a-zA-Z0-9_-]{20,}$/.test(l) && !l.includes('/')));
-  const hasFile   = lines.some(l => /\/file\/d\/|[?&]id=/.test(l));
+  const hasFolder = lines.some(l => /\/folders\//.test(l));
 
   if (lines.length > 1) {
     badge.className = 'smart-type-badge multi';
@@ -1918,49 +1952,13 @@ function onSmartInputChange() {
   }
 }
 
-// ─── ADVANCED TOGGLE ─────────────────────────────
-function toggleAdv() {
-  $('advToggle').classList.toggle('open');
-  $('advBody').classList.toggle('open');
-}
-
-// ─── DRIVE MODE (browser vs backend) ─────────────
-let GD_MODE = 'client'; // 'client' | 'server'
-
-function setDriveMode(mode) {
-  GD_MODE = mode;
-  $('modeClientBtn').style.borderColor = mode === 'client' ? 'var(--primary)' : '';
-  $('modeClientBtn').style.color       = mode === 'client' ? 'var(--primary)' : '';
-  $('modeServerBtn').style.borderColor = mode === 'server' ? '#34a853' : '';
-  $('modeServerBtn').style.color       = mode === 'server' ? '#34a853' : '';
-  $('advClientOpts').style.display = mode === 'client' ? '' : 'none';
-  $('advServerOpts').style.display = mode === 'server' ? '' : 'none';
-}
-
-async function checkDriveBackend() {
-  const base = ($('driveApiBaseUrl').value || 'http://localhost:8000').replace(/\/$/, '');
-  const el = $('driveBackendStatus');
-  el.textContent = '🔄 กำลังตรวจสอบ…';
-  try {
-    const r = await fetch(`${base}/api/drive/status`, { signal: AbortSignal.timeout(5000) });
-    const d = await r.json();
-    el.textContent = d.message;
-    el.style.color = d.configured ? 'var(--success)' : 'var(--warning)';
-  } catch {
-    el.textContent = '❌ เชื่อมต่อไม่ได้ — ตรวจสอบว่า Backend กำลังทำงาน';
-    el.style.color = 'var(--danger)';
-  }
-}
-
-// ─── SMART IMPORT — routes to client or server ───
+// ─── SMART IMPORT ─────────────────────────────────
 async function smartDriveImport() {
-  if (GD_MODE === 'server') { await smartDriveImportViaServer(); return; }
-
   const val = $('gdriveSmartInput').value.trim();
   if (!val) { showNotif('warning', 'วางลิงก์ Google Drive ก่อนนะครับ'); return; }
 
   const lines = val.split('\n').map(l => l.trim()).filter(Boolean);
-  const isFolder = lines.length === 1 && (/\/folders\//.test(lines[0]) || (parseFolderId(lines[0]) && !parseGdriveId(lines[0])));
+  const isFolder = lines.length === 1 && /\/folders\//.test(lines[0]);
 
   $('gdriveLog').innerHTML = '';
   $('folderLog').innerHTML = '';
@@ -1998,120 +1996,7 @@ async function smartDriveImport() {
   }
 }
 
-// ─── SERVER-SIDE DRIVE IMPORT ────────────────────
-async function smartDriveImportViaServer() {
-  const val = $('gdriveSmartInput').value.trim();
-  if (!val) { showNotif('warning', 'วางลิงก์ Google Drive ก่อนนะครับ'); return; }
-
-  const base = ($('driveApiBaseUrl').value || 'http://localhost:8000').replace(/\/$/, '');
-  const apiKey = $('driveServerApiKey').value.trim();
-
-  const lines = val.split('\n').map(l => l.trim()).filter(Boolean);
-  const isFolder = lines.length === 1 && /\/folders\//.test(lines[0]);
-
-  const btn = $('btnDriveImport');
-  btn.disabled = true;
-  $('folderProgressWrap').classList.add('show');
-  $('folderProgressLabel').textContent = 'กำลังส่งไปประมวลผลที่ Backend…';
-  $('folderProgressBar').style.width = '10%';
-  $('btnDriveCancel').style.display = '';
-
-  try {
-    const s = captureSettings();
-    const fd = new FormData();
-
-    // watermark image (if any)
-    if (s.wmImgEl && (s.type === 'image' || s.type === 'both')) {
-      const wc = document.createElement('canvas');
-      wc.width = s.wmImgEl.width; wc.height = s.wmImgEl.height;
-      wc.getContext('2d').drawImage(s.wmImgEl, 0, 0);
-      const wmBlob = await (await fetch(wc.toDataURL('image/png'))).blob();
-      fd.append('wm_image', wmBlob, 'watermark.png');
-    }
-
-    // common watermark fields
-    fd.append('wm_type',      s.type);
-    fd.append('text',         s.text || '');
-    fd.append('font_name',    s.font);
-    fd.append('font_size',    s.fontSize);
-    fd.append('color',        s.color);
-    fd.append('stroke_color', s.strokeColor);
-    fd.append('stroke_width', s.strokeWidth);
-    fd.append('bold',         s.bold);
-    fd.append('italic',       s.italic);
-    fd.append('underline',    s.underline || false);
-    fd.append('opacity',      s.opacity);
-    fd.append('rotation',     (s.rotation * 180 / Math.PI).toFixed(2));
-    fd.append('x_pct',        (s.xPct * 100).toFixed(2));
-    fd.append('y_pct',        (s.yPct * 100).toFixed(2));
-    fd.append('tiled',        s.tiled);
-    fd.append('tile_spacing', s.tileSpacing);
-    fd.append('out_format',   s.format);
-    fd.append('quality',      Math.round(s.quality * 100));
-    fd.append('filename_prefix', s.prefix);
-    fd.append('zip_folder',   $('folderName')?.value || 'watermarked');
-    if (s.resize) {
-      if (s.resizeW) fd.append('resize_w', s.resizeW);
-      if (s.resizeH) fd.append('resize_h', s.resizeH);
-      fd.append('keep_aspect', s.keepAspect);
-    }
-
-    const headers = {};
-    if (apiKey) headers['X-Google-Api-Key'] = apiKey;
-
-    let endpoint, folderOrFiles;
-    if (isFolder) {
-      const folderId = parseFolderId(lines[0]);
-      if (!folderId) { showNotif('error', 'ลิงก์โฟลเดอร์ไม่ถูกต้อง'); btn.disabled = false; return; }
-      fd.append('folder_id', folderId);
-      fd.append('recursive', $('gdriveRecursive')?.checked || false);
-      endpoint = `${base}/api/drive/watermark-folder`;
-      $('folderProgressLabel').textContent = 'Backend กำลังสแกนโฟลเดอร์…';
-    } else {
-      const ids = lines.map(l => parseGdriveId(l)).filter(Boolean);
-      const names = lines.map(l => l.split('/').pop().split('?')[0] || 'image');
-      if (!ids.length) { showNotif('error', 'ไม่พบ File ID ที่ถูกต้อง'); btn.disabled = false; return; }
-      fd.append('file_ids', ids.join(','));
-      fd.append('file_names', names.join(','));
-      endpoint = `${base}/api/drive/watermark-files`;
-    }
-
-    $('folderProgressBar').style.width = '30%';
-    $('folderProgressLabel').textContent = 'Backend กำลังดาวน์โหลดและใส่ลายน้ำ…';
-
-    const res = await fetch(endpoint, { method: 'POST', body: fd, headers });
-    $('folderProgressBar').style.width = '90%';
-
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({ detail: res.statusText }));
-      throw new Error(typeof err.detail === 'string' ? err.detail : JSON.stringify(err.detail));
-    }
-
-    const blob = await res.blob();
-    $('folderProgressBar').style.width = '100%';
-    const processed = res.headers.get('X-Processed') || '?';
-    const errors    = res.headers.get('X-Errors')    || '0';
-
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `watermarked_drive_${Date.now()}.zip`;
-    a.click();
-    URL.revokeObjectURL(url);
-
-    $('folderProgressLabel').textContent = `เสร็จ — Backend ประมวลผล ${processed} รูป`;
-    showNotif('success', `✅ Backend ใส่ลายน้ำ ${processed} รูป ดาวน์โหลดเป็น ZIP แล้ว${errors > 0 ? ` (ล้มเหลว ${errors})` : ''}`);
-  } catch (e) {
-    $('folderProgressLabel').textContent = 'เกิดข้อผิดพลาด';
-    $('folderProgressBar').style.width = '0%';
-    showNotif('error', '❌ ' + e.message);
-  } finally {
-    btn.disabled = false;
-    $('btnDriveCancel').style.display = 'none';
-  }
-}
-
-// ─── COMPAT SHIMS (old functions now no-ops) ─────
+// ─── COMPAT SHIMS ────────────────────────────────
 function toggleGdrive() {}
 function switchGdriveTab() {}
 function toggleApiKey() {}
@@ -2175,31 +2060,40 @@ async function loadImageFromBlob(blob, filename) {
 }
 
 async function fetchGdriveImage(fileId) {
-  // Strategy 1: direct uc export (works if public + no size limit warning)
-  const directUrl = `https://drive.google.com/uc?export=download&id=${fileId}`;
-  // Strategy 2: thumbnail (up to ~2000px, always works for public files)
-  const thumbUrl  = `https://drive.google.com/thumbnail?id=${fileId}&sz=w2048`;
-  // Strategy 3: CORS proxy fallback
-  const proxyUrl  = `https://corsproxy.io/?${encodeURIComponent(directUrl)}`;
-
-  const strategies = [
-    { url: thumbUrl,  label: 'thumbnail' },
-    { url: proxyUrl,  label: 'proxy'     },
-  ];
-
-  for (const s of strategies) {
+  // Strategy 1: OAuth — ดาวน์โหลดด้วย access token (ทำงานกับทุกไฟล์ที่เข้าถึงได้)
+  if (_accessToken) {
     try {
-      const res = await fetch(s.url, { signal: AbortSignal.timeout(15000) });
-      if (!res.ok) continue;
-      const ct = res.headers.get('content-type') || '';
-      if (!ct.startsWith('image/')) continue;
-      const blob = await res.blob();
-      if (blob.size < 500) continue;           // suspiciously tiny
-      const ext = ct.split('/')[1]?.split(';')[0] || 'jpg';
-      return { blob, ext, strategy: s.label };
-    } catch { /* try next */ }
+      const url = `https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`;
+      const res = await fetch(url, {
+        headers: { Authorization: 'Bearer ' + _accessToken },
+        signal: AbortSignal.timeout(30000),
+      });
+      if (res.ok) {
+        const ct  = res.headers.get('content-type') || 'image/jpeg';
+        const blob = await res.blob();
+        if (blob.size >= 500) {
+          const ext = ct.split('/')[1]?.split(';')[0] || 'jpg';
+          return { blob, ext, strategy: 'oauth' };
+        }
+      }
+    } catch { /* ลองวิธีต่อไป */ }
   }
-  throw new Error('ดึงรูปไม่ได้ — ตรวจสอบการแชร์ไฟล์อีกครั้ง');
+  // Strategy 2: thumbnail (ใช้ได้กับไฟล์สาธารณะ ไม่ต้องล็อกอิน)
+  const thumbUrl = `https://drive.google.com/thumbnail?id=${fileId}&sz=w2048`;
+  try {
+    const res = await fetch(thumbUrl, { signal: AbortSignal.timeout(15000) });
+    if (res.ok) {
+      const ct = res.headers.get('content-type') || '';
+      if (ct.startsWith('image/')) {
+        const blob = await res.blob();
+        if (blob.size >= 500) {
+          const ext = ct.split('/')[1]?.split(';')[0] || 'jpg';
+          return { blob, ext, strategy: 'thumbnail' };
+        }
+      }
+    }
+  } catch { /* ล้มเหลว */ }
+  throw new Error('ดึงรูปไม่ได้ — กรุณาเข้าสู่ระบบ Google หรือตรวจสอบการแชร์ไฟล์');
 }
 
 async function importFromGdrive() {
@@ -2268,26 +2162,29 @@ function flog(id, type, icon, text) {
   log.scrollTop = log.scrollHeight;
 }
 
-// ─── STRATEGY 1: Google Drive API v3 ─────────────
-async function listFilesViaAPI(folderId, apiKey, recursive, depth = 0) {
-  const IMAGE_TYPES = "mimeType contains 'image/'";
+// ─── LIST FILES via OAuth (Drive API v3) ──────────
+async function listFilesViaOAuth(folderId, recursive, depth = 0) {
+  if (!_accessToken) throw new Error('ยังไม่ได้เข้าสู่ระบบ Google — กดปุ่ม "เข้าสู่ระบบด้วย Google" ก่อน');
+
   let files = [];
   let pageToken = null;
   const indent = '  '.repeat(depth);
 
-  flog(`api-${folderId}`, 'load', '⟳', `${indent}📂 สแกนโฟลเดอร์ด้วย API…`);
+  flog(`api-${folderId}`, 'load', '⟳', `${indent}📂 กำลังสแกนโฟลเดอร์…`);
 
   do {
     const q = encodeURIComponent(`'${folderId}' in parents and trashed=false`);
-    let url = `https://www.googleapis.com/drive/v3/files?q=${q}&fields=files(id,name,mimeType),nextPageToken&pageSize=1000&key=${apiKey}`;
+    let url = `https://www.googleapis.com/drive/v3/files?q=${q}&fields=files(id,name,mimeType),nextPageToken&pageSize=1000`;
     if (pageToken) url += `&pageToken=${pageToken}`;
 
-    const res = await fetch(url);
+    const res = await fetch(url, {
+      headers: { Authorization: 'Bearer ' + _accessToken },
+    });
     const data = await res.json();
-    if (data.error) throw new Error(`API: ${data.error.message}`);
+    if (data.error) throw new Error(`Drive API: ${data.error.message}`);
 
-    const imgs  = (data.files || []).filter(f => f.mimeType.startsWith('image/'));
-    const dirs  = (data.files || []).filter(f => f.mimeType === 'application/vnd.google-apps.folder');
+    const imgs = (data.files || []).filter(f => f.mimeType.startsWith('image/'));
+    const dirs = (data.files || []).filter(f => f.mimeType === 'application/vnd.google-apps.folder');
 
     files = files.concat(imgs);
     flog(`api-${folderId}`, 'ok', '✓', `${indent}📂 พบ ${imgs.length} รูป${dirs.length ? `, ${dirs.length} โฟลเดอร์ย่อย` : ''}`);
@@ -2295,7 +2192,7 @@ async function listFilesViaAPI(folderId, apiKey, recursive, depth = 0) {
     if (recursive && dirs.length) {
       for (const dir of dirs) {
         if (GD.cancelFlag) break;
-        const sub = await listFilesViaAPI(dir.id, apiKey, true, depth + 1);
+        const sub = await listFilesViaOAuth(dir.id, true, depth + 1);
         files = files.concat(sub);
       }
     }
@@ -2305,49 +2202,20 @@ async function listFilesViaAPI(folderId, apiKey, recursive, depth = 0) {
   return files;
 }
 
-// ─── STRATEGY 2: scrape embeddedfolderview ────────
-async function listFilesViaScrape(folderId, recursive) {
-  flog('scrape', 'load', '⟳', 'กำลัง scrape โฟลเดอร์ (ไม่มี API key)…');
-
-  const proxy = url => `https://corsproxy.io/?${encodeURIComponent(url)}`;
-  const viewUrl = `https://drive.google.com/embeddedfolderview?id=${folderId}#list`;
-
-  const res = await fetch(proxy(viewUrl), { signal: AbortSignal.timeout(20000) });
-  if (!res.ok) throw new Error(`HTTP ${res.status} — ตรวจสอบการแชร์โฟลเดอร์`);
-  const html = await res.text();
-
-  // Extract all file IDs from href patterns in the HTML
-  const fileIds   = [...new Set([...html.matchAll(/\/file\/d\/([a-zA-Z0-9_-]{25,})/g)].map(m => m[1]))];
-  // Extract subfolder IDs
-  const folderIds = [...new Set([...html.matchAll(/\/folders\/([a-zA-Z0-9_-]{25,})/g)].map(m => m[1])
-    .filter(id => id !== folderId))];
-
-  const files = fileIds.map(id => ({ id, name: `image_${id.slice(0,8)}.jpg`, mimeType: 'image/jpeg' }));
-  flog('scrape', 'ok', '✓', `พบ ${files.length} ไฟล์${folderIds.length ? `, ${folderIds.length} โฟลเดอร์ย่อย` : ''}`);
-
-  if (recursive && folderIds.length) {
-    flog('scrape-sub', 'warn', '⚠', `โฟลเดอร์ย่อย ${folderIds.length} รายการ — scraping mode ข้ามได้ไม่ครบ ใส่ API Key เพื่อดึงครบ`);
-    for (const subId of folderIds) {
-      if (GD.cancelFlag) break;
-      try {
-        const sub = await listFilesViaScrape(subId, false);
-        files.push(...sub);
-      } catch { /* skip */ }
-    }
-  }
-  return files;
-}
-
 // ─── SCAN FOLDER (UI entry point) ─────────────────
 async function scanGdriveFolder() {
-  // read from new smart input OR old hidden compat field
   const rawUrl = ($('gdriveSmartInput')?.value || $('gdriveFolderUrl')?.value || '').trim();
   if (!rawUrl) { showNotif('warning', 'วางลิงก์โฟลเดอร์ก่อนนะครับ'); return; }
 
   const folderId = parseFolderId(rawUrl);
   if (!folderId) { showNotif('error', 'ลิงก์โฟลเดอร์ไม่ถูกต้อง'); return; }
 
-  const apiKey  = $('gdriveApiKey')?.value.trim() || '';
+  // ต้องล็อกอิน Google เพื่อสแกนโฟลเดอร์
+  if (!_accessToken) {
+    showNotif('warning', '⚠️ กรุณาเข้าสู่ระบบ Google ก่อนนำเข้าจากโฟลเดอร์');
+    return;
+  }
+
   const recursive = $('gdriveRecursive')?.checked || false;
 
   GD.folderFiles = [];
@@ -2356,11 +2224,7 @@ async function scanGdriveFolder() {
   if ($('folderProgressWrap')) $('folderProgressWrap').classList.remove('show');
 
   try {
-    if (apiKey) {
-      GD.folderFiles = await listFilesViaAPI(folderId, apiKey, recursive);
-    } else {
-      GD.folderFiles = await listFilesViaScrape(folderId, recursive);
-    }
+    GD.folderFiles = await listFilesViaOAuth(folderId, recursive);
 
     if (GD.cancelFlag) {
       flog('cancel', 'warn', '⚠', `หยุดการสแกน — พบ ${GD.folderFiles.length} รูปก่อนหยุด`);
@@ -2368,7 +2232,7 @@ async function scanGdriveFolder() {
 
     const count = GD.folderFiles.length;
     if (count === 0) {
-      flog('none', 'warn', '⚠', 'ไม่พบรูปในโฟลเดอร์ — ตรวจสอบการแชร์อีกครั้ง');
+      flog('none', 'warn', '⚠', 'ไม่พบรูปในโฟลเดอร์');
       showNotif('warning', 'ไม่พบรูปในโฟลเดอร์');
     } else {
       showNotif('success', `🔍 สแกนเสร็จ พบ ${count} รูป`);
@@ -2437,203 +2301,10 @@ function cancelFolderImport() {
   flog('cancel', 'warn', '⚠', 'กำลังหยุด…');
 }
 
-// ═══════════════════════════════════════════════════
-// BACKEND API MODE
-// ═══════════════════════════════════════════════════
-function toggleBackendApi() {
-  $('backendApiOpts').style.display = $('useBackendApi').checked ? 'block' : 'none';
-}
-
-async function checkApiHealth() {
-  const base = ($('apiBaseUrl').value || 'http://localhost:8000').replace(/\/$/, '');
-  const el = $('apiHealthStatus');
-  el.textContent = '🔄 กำลังตรวจสอบ…';
-  el.style.color = 'var(--text-muted)';
-  try {
-    const res = await fetch(`${base}/health`, { signal: AbortSignal.timeout(5000) });
-    const data = await res.json();
-    if (data.status === 'ok') {
-      el.textContent = '✅ เชื่อมต่อสำเร็จ — Server พร้อมใช้งาน';
-      el.style.color = 'var(--success)';
-    } else {
-      el.textContent = '⚠️ Server ตอบกลับแต่สถานะผิดปกติ';
-      el.style.color = 'var(--warning)';
-    }
-  } catch (e) {
-    el.textContent = '❌ เชื่อมต่อไม่ได้ — ตรวจสอบว่า Server กำลังทำงาน';
-    el.style.color = 'var(--danger)';
-  }
-}
-
-function _buildApiFormData(item) {
-  const fd = new FormData();
-  const s = captureSettings();
-
-  // source image
-  fd.append('image', item.file, item.name);
-
-  // watermark image if any
-  if (s.wmImgEl && (s.type === 'image' || s.type === 'both')) {
-    // convert wmImgEl to blob
-    const wc = document.createElement('canvas');
-    wc.width = s.wmImgEl.width; wc.height = s.wmImgEl.height;
-    wc.getContext('2d').drawImage(s.wmImgEl, 0, 0);
-    // will be sent async — attach canvas data URL as blob below
-    fd.append('_wm_canvas_data', wc.toDataURL('image/png'));
-  }
-
-  fd.append('wm_type',      s.type);
-  fd.append('text',         s.text || '');
-  fd.append('font_name',    s.font);
-  fd.append('font_size',    s.fontSize);
-  fd.append('color',        s.color);
-  fd.append('stroke_color', s.strokeColor);
-  fd.append('stroke_width', s.strokeWidth);
-  fd.append('bold',         s.bold);
-  fd.append('italic',       s.italic);
-  fd.append('underline',    s.underline || false);
-  fd.append('opacity',      s.opacity);
-  fd.append('rotation',     s.rotation * 180 / Math.PI);
-  fd.append('x_pct',        s.xPct * 100);
-  fd.append('y_pct',        s.yPct * 100);
-  fd.append('tiled',        s.tiled);
-  fd.append('tile_spacing', s.tileSpacing);
-  fd.append('shadow',       s.shadow);
-  fd.append('multiply',     s.blend);
-  fd.append('out_format',   s.format);
-  fd.append('quality',      Math.round(s.quality * 100));
-  fd.append('filename_prefix', s.prefix);
-  if (s.resize) {
-    if (s.resizeW) fd.append('resize_w', s.resizeW);
-    if (s.resizeH) fd.append('resize_h', s.resizeH);
-    fd.append('keep_aspect', s.keepAspect);
-  }
-  return fd;
-}
-
-async function _attachWmImageToFd(fd) {
-  const canvasData = fd.get('_wm_canvas_data');
-  fd.delete('_wm_canvas_data');
-  if (!canvasData) return;
-  const res = await fetch(canvasData);
-  const blob = await res.blob();
-  fd.append('wm_image', blob, 'watermark.png');
-}
-
-async function downloadSingleViaApi() {
-  if (S.currentIdx < 0) { showNotif('warning', 'เลือกรูปก่อน'); return; }
-  const base = ($('apiBaseUrl').value || 'http://localhost:8000').replace(/\/$/, '');
-  const item = S.images[S.currentIdx];
-
-  showNotif('info', '🖥️ กำลังส่งไปประมวลผลที่ Server…');
-  try {
-    const fd = _buildApiFormData(item);
-    await _attachWmImageToFd(fd);
-    const res = await fetch(`${base}/api/watermark`, { method: 'POST', body: fd });
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({ detail: res.statusText }));
-      throw new Error(err.detail || res.statusText);
-    }
-    const blob = await res.blob();
-    const s = captureSettings();
-    const ext = s.format === 'jpeg' ? 'jpg' : s.format;
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = s.prefix + item.name.replace(/\.[^.]+$/, '') + '.' + ext;
-    a.click();
-    URL.revokeObjectURL(url);
-    showNotif('success', '✅ ดาวน์โหลดจาก Server สำเร็จ');
-  } catch (e) {
-    showNotif('error', '❌ ' + e.message);
-  }
-}
-
-async function processAndDownloadViaApi() {
-  if (!S.images.length) { showNotif('warning', 'ไม่มีรูปภาพ'); return; }
-  const base = ($('apiBaseUrl').value || 'http://localhost:8000').replace(/\/$/, '');
-
-  const total = S.images.length;
-  $('processLabel').textContent = 'กำลังส่งไปประมวลผลที่ Server…';
-  $('processCount').textContent = `0 / ${total}`;
-  $('processBar').style.width = '0%';
-  switchTab('export');
-
-  try {
-    // Build multipart with all images
-    const fd = new FormData();
-    const s = captureSettings();
-    for (const item of S.images) {
-      fd.append('images', item.file, item.name);
-    }
-    // wm image
-    if (s.wmImgEl && (s.type === 'image' || s.type === 'both')) {
-      const wc = document.createElement('canvas');
-      wc.width = s.wmImgEl.width; wc.height = s.wmImgEl.height;
-      wc.getContext('2d').drawImage(s.wmImgEl, 0, 0);
-      const wmBlob = await (await fetch(wc.toDataURL('image/png'))).blob();
-      fd.append('wm_image', wmBlob, 'watermark.png');
-    }
-    fd.append('wm_type',      s.type);
-    fd.append('text',         s.text || '');
-    fd.append('font_name',    s.font);
-    fd.append('font_size',    s.fontSize);
-    fd.append('color',        s.color);
-    fd.append('stroke_color', s.strokeColor);
-    fd.append('stroke_width', s.strokeWidth);
-    fd.append('bold',         s.bold);
-    fd.append('italic',       s.italic);
-    fd.append('underline',    s.underline || false);
-    fd.append('opacity',      s.opacity);
-    fd.append('rotation',     s.rotation * 180 / Math.PI);
-    fd.append('x_pct',        s.xPct * 100);
-    fd.append('y_pct',        s.yPct * 100);
-    fd.append('tiled',        s.tiled);
-    fd.append('tile_spacing', s.tileSpacing);
-    fd.append('shadow',       s.shadow);
-    fd.append('multiply',     s.blend);
-    fd.append('out_format',   s.format);
-    fd.append('quality',      Math.round(s.quality * 100));
-    fd.append('filename_prefix', s.prefix);
-    fd.append('zip_folder',   $('folderName').value || 'watermarked');
-    if (s.resize) {
-      if (s.resizeW) fd.append('resize_w', s.resizeW);
-      if (s.resizeH) fd.append('resize_h', s.resizeH);
-      fd.append('keep_aspect', s.keepAspect);
-    }
-
-    $('processLabel').textContent = `กำลังอัพโหลด ${total} รูปไปยัง Server…`;
-    $('processBar').style.width = '30%';
-
-    const res = await fetch(`${base}/api/watermark/batch`, { method: 'POST', body: fd });
-    $('processBar').style.width = '80%';
-
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({ detail: res.statusText }));
-      throw new Error(err.detail || res.statusText);
-    }
-
-    const blob = await res.blob();
-    $('processBar').style.width = '100%';
-    const okCount = res.headers.get('X-Processed') || total;
-    const errCount = res.headers.get('X-Errors') || 0;
-
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url; a.download = `watermarked_${Date.now()}.zip`; a.click();
-    URL.revokeObjectURL(url);
-
-    $('processLabel').textContent = 'Server ประมวลผลเสร็จแล้ว';
-    showNotif('success', `✅ Server ประมวลผล ${okCount} รูป${errCount > 0 ? ` (ล้มเหลว ${errCount})` : ''}`);
-  } catch (e) {
-    $('processLabel').textContent = 'เกิดข้อผิดพลาด';
-    $('processBar').style.width = '0%';
-    showNotif('error', '❌ ' + e.message);
-  }
-}
-
 // ─── INIT ────────────────────────────────────────
 showNotif('info','👋 ยินดีต้อนรับ — อัพโหลดรูปเพื่อเริ่มต้น');
+// เริ่มต้น Google OAuth (รอ GIS script โหลดเสร็จ)
+setTimeout(initGoogleAuth, 800);
 </script>
 </body>
 </html>
