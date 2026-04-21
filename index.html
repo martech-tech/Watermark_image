@@ -702,7 +702,8 @@ input[type=color] { width: 40px; height: 34px; border: 1px solid var(--border); 
           </div>
 
           <div class="gdrive-smart-body">
-            <!-- textarea ลิงก์ -->
+
+            <!-- textarea ลิงก์ (ใช้งานได้เลย ไม่ต้องล็อกอิน) -->
             <div class="smart-input-wrap">
               <textarea id="gdriveSmartInput" rows="3"
                 oninput="onSmartInputChange()"
@@ -710,7 +711,7 @@ input[type=color] { width: 40px; height: 34px; border: 1px solid var(--border); 
               <div class="smart-type-badge empty" id="smartTypeBadge"></div>
             </div>
 
-            <!-- ตัวเลือกโฟลเดอร์ (แสดงเมื่อตรวจพบโฟลเดอร์) -->
+            <!-- ตัวเลือกโฟลเดอร์ -->
             <div class="folder-opts" id="folderOpts">
               <div class="check-row" style="margin-bottom:8px">
                 <input type="checkbox" id="gdriveRecursive">
@@ -1127,10 +1128,10 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
 // ═══════════════════════════════════════════════════
 // BACKEND CONFIG
 // ═══════════════════════════════════════════════════
-// 👇 ผู้ดูแลระบบ: ใส่ URL ของ Backend Server ที่นี่
-// ถ้า HTML และ Backend อยู่บน origin เดียวกัน → เว้นว่างไว้ได้ (ใช้ relative URL)
-// ถ้า Backend อยู่คนละ origin เช่น http://localhost:8000 → ใส่เต็มๆ
-const BACKEND_URL = 'http://localhost:8000';
+// ถ้า backend รันบน origin เดียวกับ frontend ให้ปล่อย '' ไว้
+// ถ้า backend อยู่คนละ host เช่น http://localhost:8000 ให้ใส่ URL นั้น
+const BACKEND_URL = '';
+const _base = () => BACKEND_URL;
 
 // ═══════════════════════════════════════════════════
 // TABS
@@ -1793,9 +1794,6 @@ const GD = {
   folderFiles: [],    // { id, name, mimeType } จาก Drive API
   cancelFlag: false,
 };
-
-// ─── BACKEND URL helper ───────────────────────────
-function _base() { return BACKEND_URL.replace(/\/$/, ''); }
 
 // ─── SOURCE PICKER ───────────────────────────────
 function selectSource(src) {

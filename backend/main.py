@@ -6,14 +6,16 @@ Run:
     pip install -r requirements.txt
     uvicorn main:app --reload --port 8000
 
-Config (optional .env file or environment variables):
-    GOOGLE_API_KEY=AIzaSy…      # Drive API key (server-side, never exposed to browser)
+Config (.env file หรือ environment variables):
+    GOOGLE_CLIENT_ID=…          # OAuth 2.0 Client ID
+    GOOGLE_CLIENT_SECRET=…      # OAuth 2.0 Client Secret
+    GOOGLE_REFRESH_TOKEN=…      # Refresh Token (ได้จาก OAuth 2.0 Playground)
     ALLOWED_ORIGINS=*           # CORS origins
 
 Endpoints:
     GET  /                              — API info
     GET  /health                        — health check
-    GET  /api/drive/status              — check if Drive API key is configured
+    GET  /api/drive/status              — check if Drive credentials are configured
     POST /api/drive/list-folder         — list images in a Drive folder
     POST /api/drive/watermark-folder    — download folder → watermark → ZIP
     POST /api/drive/watermark-files     — download file list → watermark → ZIP
@@ -30,7 +32,7 @@ import httpx
 from typing import Optional, List
 from dotenv import load_dotenv
 
-from fastapi import FastAPI, File, Form, HTTPException, Header, UploadFile, BackgroundTasks
+from fastapi import FastAPI, File, Form, HTTPException, UploadFile, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, Response, StreamingResponse
 from PIL import Image, ImageDraw, ImageFont
@@ -40,11 +42,15 @@ load_dotenv()
 # ─────────────────────────────────────────────────────────────
 # Config
 # ─────────────────────────────────────────────────────────────
-GOOGLE_API_KEY   = os.getenv("GOOGLE_API_KEY", "")
-ALLOWED_ORIGINS  = os.getenv("ALLOWED_ORIGINS", "*").split(",")
-DRIVE_API_BASE   = "https://www.googleapis.com/drive/v3"
-DRIVE_DL_TIMEOUT = 30   # seconds per file
-DRIVE_LIST_PAGE  = 1000 # files per API page
+GOOGLE_CLIENT_ID     = os.getenv("GOOGLE_CLIENT_ID", "")
+GOOGLE_CLIENT_SECRET = os.getenv("GOOGLE_CLIENT_SECRET", "")
+GOOGLE_REFRESH_TOKEN = os.getenv("GOOGLE_REFRESH_TOKEN", "")
+ALLOWED_ORIGINS      = os.getenv("ALLOWED_ORIGINS", "*").split(",")
+DRIVE_API_BASE       = "https://www.googleapis.com/drive/v3"
+DRIVE_DL_TIMEOUT     = 30    # seconds per file
+DRIVE_LIST_PAGE      = 1000  # files per API page
+
+_DRIVE_CONFIGURED = bool(GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET and GOOGLE_REFRESH_TOKEN)
 
 
 # ─────────────────────────────────────────────────────────────
@@ -243,36 +249,52 @@ def _wm_settings(
 # ─────────────────────────────────────────────────────────────
 # Google Drive API helpers
 # ─────────────────────────────────────────────────────────────
-def _resolve_api_key(header_key: str) -> str:
-    """Use server .env key if set, else fall back to per-request header key."""
-    return GOOGLE_API_KEY or header_key or ""
+async def _get_access_token(client: httpx.AsyncClient) -> str:
+    """Exchange refresh token for a short-lived access token."""
+    if not _DRIVE_CONFIGURED:
+        raise HTTPException(
+            400,
+            "ยังไม่ได้ตั้งค่า Google OAuth credentials ใน .env — "
+            "ต้องมี GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET และ GOOGLE_REFRESH_TOKEN"
+        )
+    r = await client.post(
+        "https://oauth2.googleapis.com/token",
+        data={
+            "client_id":     GOOGLE_CLIENT_ID,
+            "client_secret": GOOGLE_CLIENT_SECRET,
+            "refresh_token": GOOGLE_REFRESH_TOKEN,
+            "grant_type":    "refresh_token",
+        },
+        timeout=15,
+    )
+    data = r.json()
+    if "error" in data:
+        raise HTTPException(400, f"OAuth error: {data.get('error_description', data['error'])}")
+    return data["access_token"]
 
 
 async def drive_list_folder(
     folder_id: str,
-    api_key: str,
+    token: str,
     recursive: bool = False,
     client: httpx.AsyncClient = None,
     depth: int = 0,
 ) -> list[dict]:
     """Return list of image file dicts from a Drive folder."""
-    if not api_key:
-        raise HTTPException(400, "ต้องระบุ Google API Key")
-
     files = []
     page_token = None
+    headers = {"Authorization": f"Bearer {token}"}
 
     while True:
         params = {
             "q": f"'{folder_id}' in parents and trashed=false",
             "fields": "files(id,name,mimeType),nextPageToken",
             "pageSize": DRIVE_LIST_PAGE,
-            "key": api_key,
         }
         if page_token:
             params["pageToken"] = page_token
 
-        r = await client.get(f"{DRIVE_API_BASE}/files", params=params, timeout=20)
+        r = await client.get(f"{DRIVE_API_BASE}/files", params=params, headers=headers, timeout=20)
         data = r.json()
 
         if "error" in data:
@@ -284,7 +306,7 @@ async def drive_list_folder(
 
         if recursive:
             for d in dirs:
-                sub = await drive_list_folder(d["id"], api_key, True, client, depth + 1)
+                sub = await drive_list_folder(d["id"], token, True, client, depth + 1)
                 files.extend(sub)
 
         page_token = data.get("nextPageToken")
@@ -294,12 +316,13 @@ async def drive_list_folder(
     return files
 
 
-async def drive_download_image(file_id: str, api_key: str, client: httpx.AsyncClient) -> bytes:
+async def drive_download_image(file_id: str, token: str, client: httpx.AsyncClient) -> bytes:
     """Download a single Drive file by ID."""
     url = f"{DRIVE_API_BASE}/files/{file_id}"
     r = await client.get(
         url,
-        params={"alt": "media", "key": api_key},
+        params={"alt": "media"},
+        headers={"Authorization": f"Bearer {token}"},
         timeout=DRIVE_DL_TIMEOUT,
         follow_redirects=True,
     )
@@ -314,11 +337,11 @@ async def drive_download_image(file_id: str, api_key: str, client: httpx.AsyncCl
 @app.get("/")
 def root():
     return {
-        "name": "WaterMark Pro API", "version": "1.1.0",
-        "drive_api_configured": bool(GOOGLE_API_KEY),
+        "name": "WaterMark Pro API", "version": "1.2.0",
+        "drive_configured": _DRIVE_CONFIGURED,
         "endpoints": {
             "GET  /health":                      "Health check",
-            "GET  /api/drive/status":            "Drive API key status",
+            "GET  /api/drive/status":            "Drive OAuth status",
             "POST /api/drive/list-folder":       "List images in Drive folder",
             "POST /api/drive/watermark-folder":  "Drive folder → watermark → ZIP",
             "POST /api/drive/watermark-files":   "Drive file IDs → watermark → ZIP",
@@ -330,7 +353,7 @@ def root():
 
 @app.get("/health")
 def health():
-    return {"status": "ok", "drive_configured": bool(GOOGLE_API_KEY)}
+    return {"status": "ok", "drive_configured": _DRIVE_CONFIGURED}
 
 
 # ─────────────────────────────────────────────────────────────
@@ -340,25 +363,23 @@ def health():
 async def proxy_drive_file(file_id: str):
     """
     Proxy a single Drive file to the browser.
-    - API key ไม่เปิดเผยใน browser
+    - OAuth credentials อยู่ที่ server เท่านั้น ไม่เปิดเผยใน browser
     - หลีกเลี่ยงปัญหา CORS เมื่อ browser พยายามดึงโดยตรง
-    - รองรับไฟล์ทั้ง public และ private (ขึ้นอยู่กับสิทธิ์ของ API key / service account)
+    - รองรับไฟล์ส่วนตัวของ developer (ไม่ต้องแชร์สาธารณะ)
     """
-    if not GOOGLE_API_KEY:
-        raise HTTPException(400, "ยังไม่ได้ตั้งค่า GOOGLE_API_KEY ใน server — ใส่ใน .env ก่อน")
-
-    url = f"{DRIVE_API_BASE}/files/{file_id}"
     async with httpx.AsyncClient() as client:
+        token = await _get_access_token(client)
         r = await client.get(
-            url,
-            params={"alt": "media", "key": GOOGLE_API_KEY},
+            f"{DRIVE_API_BASE}/files/{file_id}",
+            params={"alt": "media"},
+            headers={"Authorization": f"Bearer {token}"},
             timeout=DRIVE_DL_TIMEOUT,
             follow_redirects=True,
         )
     if r.status_code == 404:
-        raise HTTPException(404, "ไม่พบไฟล์ใน Drive — ตรวจสอบว่าแชร์ถูกต้อง")
+        raise HTTPException(404, "ไม่พบไฟล์ใน Drive — ตรวจสอบว่า ID ถูกต้อง")
     if r.status_code == 403:
-        raise HTTPException(403, "ไม่มีสิทธิ์เข้าถึงไฟล์ — ตรวจสอบการแชร์หรือ API Key")
+        raise HTTPException(403, "ไม่มีสิทธิ์เข้าถึงไฟล์ — ตรวจสอบ OAuth credentials")
     if r.status_code != 200:
         raise HTTPException(r.status_code, f"ดาวน์โหลดไม่ได้: HTTP {r.status_code}")
 
@@ -369,11 +390,11 @@ async def proxy_drive_file(file_id: str):
 @app.get("/api/drive/status")
 def drive_status():
     return {
-        "configured": bool(GOOGLE_API_KEY),
+        "configured": _DRIVE_CONFIGURED,
         "message": (
-            "✅ Server มี Google API Key พร้อมใช้งาน"
-            if GOOGLE_API_KEY else
-            "⚠️ ยังไม่ได้ตั้งค่า API Key — ใส่ใน .env หรือส่งมากับ request"
+            "✅ OAuth 2.0 credentials พร้อมใช้งาน"
+            if _DRIVE_CONFIGURED else
+            "⚠️ ยังไม่ได้ตั้งค่า — ใส่ GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, GOOGLE_REFRESH_TOKEN ใน .env"
         ),
     }
 
@@ -382,11 +403,10 @@ def drive_status():
 async def list_drive_folder(
     folder_id: str = Form(...),
     recursive: bool = Form(False),
-    x_google_api_key: str = Header("", alias="X-Google-Api-Key"),
 ):
-    api_key = _resolve_api_key(x_google_api_key)
     async with httpx.AsyncClient() as client:
-        files = await drive_list_folder(folder_id, api_key, recursive, client)
+        token = await _get_access_token(client)
+        files = await drive_list_folder(folder_id, token, recursive, client)
     return {"count": len(files), "files": files}
 
 
@@ -419,10 +439,7 @@ async def watermark_drive_folder(
     filename_prefix: str = Form("wm_"),
     zip_folder: str = Form("watermarked"),
     wm_image: Optional[UploadFile] = File(None),
-    x_google_api_key: str = Header("", alias="X-Google-Api-Key"),
 ):
-    api_key = _resolve_api_key(x_google_api_key)
-
     wm_img_obj = None
     if wm_image:
         raw = await wm_image.read()
@@ -436,7 +453,8 @@ async def watermark_drive_folder(
     settings["wm_img"] = wm_img_obj
 
     async with httpx.AsyncClient() as client:
-        files = await drive_list_folder(folder_id, api_key, recursive, client)
+        token = await _get_access_token(client)
+        files = await drive_list_folder(folder_id, token, recursive, client)
         if not files:
             raise HTTPException(404, "ไม่พบรูปในโฟลเดอร์")
 
@@ -447,7 +465,7 @@ async def watermark_drive_folder(
         with zipfile.ZipFile(zip_buf, "w", zipfile.ZIP_DEFLATED) as zf:
             for f in files:
                 try:
-                    img_bytes = await drive_download_image(f["id"], api_key, client)
+                    img_bytes = await drive_download_image(f["id"], token, client)
                     img = Image.open(io.BytesIO(img_bytes))
                     result = apply_watermark(img, **settings)
                     base_name = os.path.splitext(f["name"])[0]
@@ -500,9 +518,7 @@ async def watermark_drive_files(
     filename_prefix: str = Form("wm_"),
     zip_folder: str = Form("watermarked"),
     wm_image: Optional[UploadFile] = File(None),
-    x_google_api_key: str = Header("", alias="X-Google-Api-Key"),
 ):
-    api_key = _resolve_api_key(x_google_api_key)
     ids = [i.strip() for i in file_ids.split(",") if i.strip()]
     names_list = [n.strip() for n in file_names.split(",") if n.strip()]
 
@@ -520,6 +536,7 @@ async def watermark_drive_files(
     ext = "jpg" if out_format == "jpeg" else out_format
 
     async with httpx.AsyncClient() as client:
+        token = await _get_access_token(client)
         zip_buf = io.BytesIO()
         ok, errors = 0, []
 
@@ -527,7 +544,7 @@ async def watermark_drive_files(
             for i, fid in enumerate(ids):
                 fname = names_list[i] if i < len(names_list) else f"image_{i+1}.{ext}"
                 try:
-                    img_bytes = await drive_download_image(fid, api_key, client)
+                    img_bytes = await drive_download_image(fid, token, client)
                     img = Image.open(io.BytesIO(img_bytes))
                     result = apply_watermark(img, **settings)
                     base_name = os.path.splitext(fname)[0]
