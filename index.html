@@ -667,7 +667,7 @@ input[type=color] { width: 40px; height: 34px; border: 1px solid var(--border); 
             ✅ รองรับมากกว่า 10,000 รูปในครั้งเดียว
           </p>
         </div>
-        <input type="file" id="fileInput" multiple accept="image/*" style="display:none">
+        <input type="file" id="fileInput" multiple accept="image/*,.heic,.heif,.tif,.tiff" style="display:none">
 
         <!-- loading progress (hidden until uploading) -->
         <div class="upload-progress-pill" id="localProgressPill">
@@ -842,7 +842,7 @@ input[type=color] { width: 40px; height: 34px; border: 1px solid var(--border); 
             <p id="wmImgName">คลิกเลือกรูปลายน้ำ</p>
             <p style="font-size:0.73rem;margin-top:3px">PNG แนะนำ (รองรับ transparency)</p>
           </div>
-          <input type="file" id="wmImgInput" accept="image/*" style="display:none" onchange="loadWmImage(this)">
+          <input type="file" id="wmImgInput" accept="image/*,.heic,.heif,.tif,.tiff" style="display:none" onchange="loadWmImage(this)">
           <div id="wmImgPreviewBox" style="display:none;margin-top:8px;text-align:center">
             <img id="wmImgPreview" style="max-height:75px;max-width:100%;border-radius:6px;border:1px solid var(--border)">
           </div>
@@ -1093,6 +1093,7 @@ input[type=color] { width: 40px; height: 34px; border: 1px solid var(--border); 
 <div id="notifications"></div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/heic2any@0.0.4/dist/heic2any.min.js"></script>
 <script>
 // ═══════════════════════════════════════════════════
 // STATE
@@ -1149,7 +1150,7 @@ function switchTab(name) {
 const uploadZone = $('uploadZone');
 uploadZone.addEventListener('dragover', e => { e.preventDefault(); uploadZone.classList.add('drag-over'); });
 uploadZone.addEventListener('dragleave', () => uploadZone.classList.remove('drag-over'));
-uploadZone.addEventListener('drop', e => { e.preventDefault(); uploadZone.classList.remove('drag-over'); addImages([...e.dataTransfer.files].filter(f=>f.type.startsWith('image/'))); });
+uploadZone.addEventListener('drop', e => { e.preventDefault(); uploadZone.classList.remove('drag-over'); addImages([...e.dataTransfer.files]); });
 
 $('fileInput').addEventListener('change', function() { addImages([...this.files]); this.value=''; });
 
@@ -1157,48 +1158,80 @@ $('fileInput').addEventListener('change', function() { addImages([...this.files]
 const stage = $('previewStage');
 stage.addEventListener('dragover', e => { e.preventDefault(); stage.classList.add('drag-over'); });
 stage.addEventListener('dragleave', () => stage.classList.remove('drag-over'));
-stage.addEventListener('drop', e => { e.preventDefault(); stage.classList.remove('drag-over'); const f=[...e.dataTransfer.files].filter(f=>f.type.startsWith('image/')); if(f.length) addImages(f); });
+stage.addEventListener('drop', e => { e.preventDefault(); stage.classList.remove('drag-over'); const f=[...e.dataTransfer.files]; if(f.length) addImages(f); });
+
+// ─── Image format helpers ────────────────────────────────────
+function _isHeic(f) {
+  return /\.(heic|heif)$/i.test(f.name) ||
+         f.type === 'image/heic' || f.type === 'image/heif';
+}
+function _isImageFile(f) {
+  return f.type.startsWith('image/') ||
+         /\.(jpe?g|png|gif|webp|bmp|svg|avif|tiff?|heic|heif|ico|jfif|pjpeg|pjp)$/i.test(f.name);
+}
+
+/**
+ * Convert HEIC → JPEG blob so browsers that can't decode HEIC (Chrome/Firefox)
+ * can still display it. Returns the original file for non-HEIC formats.
+ */
+async function _toDisplayBlob(file) {
+  if (!_isHeic(file)) return file;
+  if (typeof heic2any === 'undefined') return null;  // library not loaded
+  try {
+    const result = await heic2any({ blob: file, toType: 'image/jpeg', quality: 0.92 });
+    const blob = Array.isArray(result) ? result[0] : result;
+    return new File([blob], file.name.replace(/\.(heic|heif)$/i, '.jpg'), { type: 'image/jpeg' });
+  } catch {
+    return null;  // conversion failed — skip this file
+  }
+}
 
 async function addImages(files) {
+  // Accept all image files (including HEIC, TIFF, etc.)
+  files = [...files].filter(_isImageFile);
   if (!files.length) return;
   const total = files.length;
   let done = 0;
-  // show progress pill
   const pill = $('localProgressPill');
   if (pill) pill.classList.add('show');
-  const BATCH = 50;
+  const BATCH = 8;   // smaller batch — HEIC conversion is CPU-heavy
   for (let i = 0; i < files.length; i += BATCH) {
     const batch = files.slice(i, i+BATCH);
-    await Promise.all(batch.map(file => new Promise(resolve => {
-      const reader = new FileReader();
-      reader.onload = ev => {
-        const item = { id: nextId++, file, name: file.name, src: ev.target.result, img: null, selected: false, processed: false, resultBlob: null, thumb: null };
-        const img = new Image();
-        img.onload = () => {
-          item.img = img;
-          const tc = document.createElement('canvas');
-          const ts = 100, ratio = img.width/img.height;
-          tc.width = ratio>1 ? ts : Math.round(ts*ratio);
-          tc.height = ratio>1 ? Math.round(ts/ratio) : ts;
-          tc.getContext('2d').drawImage(img, 0, 0, tc.width, tc.height);
-          item.thumb = tc.toDataURL('image/jpeg', 0.65);
-          S.images.push(item);
-          done++;
-          const pct = Math.round(done/total*100);
-          $('loadBar').style.width = pct+'%';
-          if ($('localProgressText')) $('localProgressText').textContent = `${done} / ${total}`;
-          resolve();
+    await Promise.all(batch.map(async file => {
+      // Convert HEIC → JPEG in browser if needed
+      const srcFile = await _toDisplayBlob(file);
+      if (!srcFile) { done++; return; }   // skip unconvertible files
+
+      return new Promise(resolve => {
+        const reader = new FileReader();
+        reader.onload = ev => {
+          const item = { id: nextId++, file: srcFile, name: srcFile.name, src: ev.target.result,
+                         img: null, selected: false, processed: false, resultBlob: null, thumb: null };
+          const img = new Image();
+          img.onload = () => {
+            item.img = img;
+            const tc = document.createElement('canvas');
+            const ts = 100, ratio = img.width / img.height;
+            tc.width  = ratio > 1 ? ts : Math.round(ts * ratio);
+            tc.height = ratio > 1 ? Math.round(ts / ratio) : ts;
+            tc.getContext('2d').drawImage(img, 0, 0, tc.width, tc.height);
+            item.thumb = tc.toDataURL('image/jpeg', 0.65);
+            S.images.push(item);
+            done++;
+            $('loadBar').style.width = Math.round(done / total * 100) + '%';
+            if ($('localProgressText')) $('localProgressText').textContent = `${done} / ${total}`;
+            resolve();
+          };
+          img.onerror = () => { done++; resolve(); };
+          img.src = ev.target.result;
         };
-        img.onerror = () => { done++; resolve(); };
-        img.src = ev.target.result;
-      };
-      reader.readAsDataURL(file);
-    })));
+        reader.readAsDataURL(srcFile);
+      });
+    }));
     renderGallery(); updateStats(); await sleep(10);
   }
   renderGallery(); updateStats();
-  // hide progress pill
-  if (pill) { pill.classList.remove('show'); $('loadBar').style.width='0%'; }
+  if (pill) { pill.classList.remove('show'); $('loadBar').style.width = '0%'; }
   showNotif('success', `✅ เพิ่ม ${files.length} รูปเรียบร้อย`);
   if (S.currentIdx < 0 && S.images.length > 0) showPreview(0);
 }
@@ -1503,15 +1536,24 @@ function setWmType(t) {
   $('imageWmSection').style.display=(t==='image'||t==='both')?'block':'none';
   updatePreview();
 }
-function loadWmImage(input) {
-  const file=input.files[0]; if(!file) return;
-  const reader=new FileReader();
-  reader.onload=ev=>{
-    const img=new Image();
-    img.onload=()=>{S.wmImgEl=img;$('wmImgName').textContent=file.name;$('wmImgPreview').src=ev.target.result;$('wmImgPreviewBox').style.display='block';updatePreview();};
-    img.src=ev.target.result;
+async function loadWmImage(input) {
+  let file = input.files[0]; if (!file) return;
+  // Convert HEIC watermark image if needed
+  const src = await _toDisplayBlob(file);
+  if (!src) { showNotif('error', 'แปลงไฟล์ HEIC ไม่สำเร็จ'); return; }
+  const reader = new FileReader();
+  reader.onload = ev => {
+    const img = new Image();
+    img.onload = () => {
+      S.wmImgEl = img;
+      $('wmImgName').textContent = src.name;
+      $('wmImgPreview').src = ev.target.result;
+      $('wmImgPreviewBox').style.display = 'block';
+      updatePreview();
+    };
+    img.src = ev.target.result;
   };
-  reader.readAsDataURL(file);
+  reader.readAsDataURL(src);
 }
 function setPosition(pos) {
   document.querySelectorAll('.pos-btn').forEach(b=>b.classList.remove('active'));

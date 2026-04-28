@@ -37,6 +37,13 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse, Response, StreamingResponse
 from PIL import Image, ImageDraw, ImageFont
 
+# HEIC / HEIF support — must be registered before any Image.open() call
+try:
+    from pillow_heif import register_heif_opener
+    register_heif_opener()
+except ImportError:
+    pass  # pillow-heif not installed; HEIC files will raise an error at open time
+
 load_dotenv()
 
 # ─────────────────────────────────────────────────────────────
