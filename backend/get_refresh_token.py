@@ -63,12 +63,12 @@ class _Handler(http.server.BaseHTTPRequestHandler):
         qs = urllib.parse.parse_qs(parsed.query)
         if "code" in qs:
             code_holder["code"] = qs["code"][0]
-            body = b"<h2>&#x2705; สำเร็จ! ปิดแท็บนี้ได้เลย</h2>"
+            body = "<h2>&#x2705; Done! You can close this tab.</h2>".encode("utf-8")
         elif "error" in qs:
             code_holder["error"] = qs["error"][0]
-            body = f"<h2>&#x274C; {qs['error'][0]}</h2>".encode()
+            body = f"<h2>&#x274C; {qs['error'][0]}</h2>".encode("utf-8")
         else:
-            body = b"<h2>รอสักครู่...</h2>"
+            body = b"<h2>Please wait...</h2>"
         self.send_response(200)
         self.send_header("Content-Type", "text/html; charset=utf-8")
         self.end_headers()
