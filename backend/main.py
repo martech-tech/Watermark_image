@@ -338,20 +338,12 @@ async def drive_download_image(file_id: str, token: str, client: httpx.AsyncClie
 # Routes — basic
 # ─────────────────────────────────────────────────────────────
 @app.get("/")
-def root():
-    return {
-        "name": "WaterMark Pro API", "version": "1.2.0",
-        "drive_configured": _DRIVE_CONFIGURED,
-        "endpoints": {
-            "GET  /health":                      "Health check",
-            "GET  /api/drive/status":            "Drive OAuth status",
-            "POST /api/drive/list-folder":       "List images in Drive folder",
-            "POST /api/drive/watermark-folder":  "Drive folder → watermark → ZIP",
-            "POST /api/drive/watermark-files":   "Drive file IDs → watermark → ZIP",
-            "POST /api/watermark":               "Single image → watermarked file",
-            "POST /api/watermark/batch":         "Multiple images → ZIP",
-        },
-    }
+async def root():
+    """Serve the frontend app."""
+    index = os.path.join(FRONTEND_DIR, "index.html")
+    if os.path.exists(index):
+        return FileResponse(index, media_type="text/html")
+    return Response("index.html not found", status_code=404)
 
 
 @app.get("/health")
