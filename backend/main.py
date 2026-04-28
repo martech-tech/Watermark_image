@@ -385,8 +385,21 @@ async def proxy_drive_file(file_id: str):
     if r.status_code != 200:
         raise HTTPException(r.status_code, f"ดาวน์โหลดไม่ได้: HTTP {r.status_code}")
 
-    content_type = r.headers.get("content-type", "image/jpeg")
-    return Response(content=r.content, media_type=content_type)
+    content_type = r.headers.get("content-type", "image/jpeg").lower().split(";")[0].strip()
+    content      = r.content
+
+    # Convert HEIC/HEIF → JPEG so all browsers can display it
+    if content_type in ("image/heic", "image/heif"):
+        try:
+            img = Image.open(io.BytesIO(content))
+            buf = io.BytesIO()
+            img.convert("RGB").save(buf, format="JPEG", quality=92)
+            content      = buf.getvalue()
+            content_type = "image/jpeg"
+        except Exception:
+            pass  # serve original bytes; browser will show its own error
+
+    return Response(content=content, media_type=content_type)
 
 
 @app.get("/api/drive/status")
