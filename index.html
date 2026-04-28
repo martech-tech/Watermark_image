@@ -2142,7 +2142,7 @@ async function importFromGdrive() {
       newItems.push(item);
       S.images.push(item);
       ok++;
-      glog(logId, 'ok', '✓', `✅ สำเร็จ (${strategy}) — ${item.img.width}×${item.img.height} — ${shortLabel}`);
+      glog(logId, 'ok', '✓', `✅ สำเร็จ (${strategy}) — ${item.w}×${item.h} — ${shortLabel}`);
       renderGallery();
       updateStats();
       if (S.currentIdx < 0) showPreview(S.images.length - 1);
@@ -2255,7 +2255,7 @@ async function importGdriveFolder() {
         const item = await loadImageFromBlob(blob, filename);
         S.images.push(item);
         ok++;
-        flog(`fi-${f.id}`, 'ok', '✓', `✅ ${filename} (${item.img.width}×${item.img.height})`);
+        flog(`fi-${f.id}`, 'ok', '✓', `✅ ${filename} (${item.w}×${item.h})`);
       } catch (err) {
         fail++;
         flog(`fi-${f.id}`, 'err', '✗', `❌ ${f.name} — ${err.message}`);
