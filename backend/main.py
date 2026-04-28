@@ -34,7 +34,7 @@ from dotenv import load_dotenv
 
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse, Response, StreamingResponse
+from fastapi.responses import FileResponse, JSONResponse, Response, StreamingResponse
 from PIL import Image, ImageDraw, ImageFont
 
 load_dotenv()
@@ -56,7 +56,10 @@ _DRIVE_CONFIGURED = bool(GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET and GOOGLE_RE
 # ─────────────────────────────────────────────────────────────
 # App setup
 # ─────────────────────────────────────────────────────────────
-app = FastAPI(title="WaterMark Pro API", version="1.1.0")
+# ไดเรกทอรีที่ index.html อยู่ (หนึ่งระดับเหนือ backend/)
+FRONTEND_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+
+app = FastAPI(title="WaterMark Pro API", version="1.2.0")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=ALLOWED_ORIGINS,
@@ -692,4 +695,19 @@ async def watermark_batch(
             "X-Processed": str(ok),
             "X-Errors": str(len(errors)),
         },
+    )
+
+
+# ─────────────────────────────────────────────────────────────
+# Serve frontend (index.html) — must be last
+# ─────────────────────────────────────────────────────────────
+@app.get("/{full_path:path}", include_in_schema=False)
+async def serve_frontend(full_path: str):
+    """Serve index.html for every non-API path so the app works at http://localhost:8000/"""
+    index = os.path.join(FRONTEND_DIR, "index.html")
+    if os.path.exists(index):
+        return FileResponse(index, media_type="text/html")
+    return Response(
+        "index.html not found — make sure backend/ is inside the project root",
+        status_code=404,
     )
