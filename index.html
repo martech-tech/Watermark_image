@@ -1186,6 +1186,20 @@ async function _toDisplayBlob(file) {
   }
 }
 
+// ─── Lazy image loader ───────────────────────────────────────
+// Loads item.img from item.file on-demand via ObjectURL (no DataURL overhead).
+// Callers should null out item.img when they're done to release decoded pixels.
+function _loadImg(item) {
+  if (item.img) return Promise.resolve(item.img);
+  return new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(item.file);
+    const img = new Image();
+    img.onload  = () => { URL.revokeObjectURL(url); item.img = img; resolve(img); };
+    img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('load failed')); };
+    img.src = url;
+  });
+}
+
 async function addImages(files) {
   // Accept all image files (including HEIC, TIFF, etc.)
   files = [...files].filter(_isImageFile);
@@ -1203,29 +1217,32 @@ async function addImages(files) {
       if (!srcFile) { done++; return; }   // skip unconvertible files
 
       return new Promise(resolve => {
-        const reader = new FileReader();
-        reader.onload = ev => {
-          const item = { id: nextId++, file: srcFile, name: srcFile.name, src: ev.target.result,
-                         img: null, selected: false, processed: false, resultBlob: null, thumb: null };
-          const img = new Image();
-          img.onload = () => {
-            item.img = img;
-            const tc = document.createElement('canvas');
-            const ts = 100, ratio = img.width / img.height;
-            tc.width  = ratio > 1 ? ts : Math.round(ts * ratio);
-            tc.height = ratio > 1 ? Math.round(ts / ratio) : ts;
-            tc.getContext('2d').drawImage(img, 0, 0, tc.width, tc.height);
-            item.thumb = tc.toDataURL('image/jpeg', 0.65);
-            S.images.push(item);
-            done++;
-            $('loadBar').style.width = Math.round(done / total * 100) + '%';
-            if ($('localProgressText')) $('localProgressText').textContent = `${done} / ${total}`;
-            resolve();
+        // Use ObjectURL — avoids storing a base64 DataURL copy in the JS heap
+        const url = URL.createObjectURL(srcFile);
+        const img = new Image();
+        img.onload = () => {
+          const item = {
+            id: nextId++, file: srcFile, name: srcFile.name,
+            // store only dimensions — NOT the full DataURL or decoded img
+            w: img.width, h: img.height,
+            src: null, img: null,
+            selected: false, processed: false, resultBlob: null, thumb: null,
           };
-          img.onerror = () => { done++; resolve(); };
-          img.src = ev.target.result;
+          const tc = document.createElement('canvas');
+          const ts = 100, ratio = img.width / img.height;
+          tc.width  = ratio > 1 ? ts : Math.round(ts * ratio);
+          tc.height = ratio > 1 ? Math.round(ts / ratio) : ts;
+          tc.getContext('2d').drawImage(img, 0, 0, tc.width, tc.height);
+          item.thumb = tc.toDataURL('image/jpeg', 0.65);
+          URL.revokeObjectURL(url);   // free immediately — thumbnail is all we need
+          S.images.push(item);
+          done++;
+          $('loadBar').style.width = Math.round(done / total * 100) + '%';
+          if ($('localProgressText')) $('localProgressText').textContent = `${done} / ${total}`;
+          resolve();
         };
-        reader.readAsDataURL(srcFile);
+        img.onerror = () => { URL.revokeObjectURL(url); done++; resolve(); };
+        img.src = url;
       });
     }));
     renderGallery(); updateStats(); await sleep(10);
@@ -1308,11 +1325,13 @@ function updateStats() {
 // ═══════════════════════════════════════════════════
 // PREVIEW & ZOOM
 // ═══════════════════════════════════════════════════
-function showPreview(idx) {
+async function showPreview(idx) {
   if (idx<0||idx>=S.images.length) return;
-  // Deselect old current
-  if (S.currentIdx>=0 && S.images[S.currentIdx]) {
-    const old=S.images[S.currentIdx]; refreshThumb(old);
+  // Release decoded pixels of the previously-viewed image to free RAM
+  if (S.currentIdx>=0 && S.currentIdx!==idx && S.images[S.currentIdx]) {
+    const old=S.images[S.currentIdx];
+    refreshThumb(old);
+    old.img = null;   // allow GC to reclaim decoded pixels
   }
   S.currentIdx = idx;
   const item = S.images[idx];
@@ -1320,13 +1339,14 @@ function showPreview(idx) {
   $('canvasWrap').style.display = '';
   $('ptbFilename').innerHTML = `<b>${item.name}</b>`;
   $('ptbDims').style.display = '';
-  $('ptbDims').textContent = item.img ? `${item.img.width} × ${item.img.height}` : '';
+  $('ptbDims').textContent = (item.w && item.h) ? `${item.w} × ${item.h}` : '';
   $('ptbCurrent').textContent = idx+1;
   $('ptbTotal').textContent = S.images.length;
-  // Scroll thumb into view
   const el=$('th-'+item.id);
   if(el) el.scrollIntoView({block:'nearest',inline:'nearest'});
   refreshThumb(item);
+  // Load image on-demand (lazy) — releases after switching away
+  try { await _loadImg(item); } catch { return; }
   fitZoom(false);
   updatePreview();
 }
@@ -1347,11 +1367,12 @@ function applyTransform() {
 
 function fitZoom(animate=true) {
   const idx = S.currentIdx;
-  if (idx<0||!S.images[idx]||!S.images[idx].img) return;
+  if (idx<0||!S.images[idx]) return;
   const item = S.images[idx];
+  const iw = (item.img ? item.img.width  : item.w) || 1;
+  const ih = (item.img ? item.img.height : item.h) || 1;
   const stageEl = $('previewStage');
   const sw=stageEl.clientWidth-40, sh=stageEl.clientHeight-40;
-  const iw=item.img.width, ih=item.img.height;
   const scale = Math.min(sw/iw, sh/ih, 1);
   S.zoom = scale; S.panX=0; S.panY=0;
   applyTransform();
@@ -1680,7 +1701,7 @@ async function processImages(items){
   $('processBar').style.width='0%';
   $('cancelBtn').style.display='';
   switchTab('export');
-  const BATCH=20;
+  const BATCH=4;
   for(let i=0;i<items.length;i+=BATCH){
     if(S.cancelFlag) break;
     const batch=items.slice(i,Math.min(i+BATCH,items.length));
@@ -1701,6 +1722,8 @@ async function processImages(items){
 }
 
 async function applyWatermarkToItem(item,s){
+  // Load image on-demand if it was released to save memory
+  try { await _loadImg(item); } catch { return; }
   return new Promise(resolve=>{
     if(!item.img){resolve();return;}
     const c=document.createElement('canvas');
@@ -1719,7 +1742,12 @@ async function applyWatermarkToItem(item,s){
     if(s.tiled) drawTiledFull(ctx,w,h,s);
     else{ctx.translate(w*s.xPct,h*s.yPct);ctx.rotate(s.rotation);drawWmFull(ctx,w,h,s,0,0);ctx.setTransform(1,0,0,1,0,0);}
     ctx.restore();
-    c.toBlob(blob=>{item.resultBlob=blob;item.processed=true;resolve();},'image/'+s.format,s.quality);
+    c.toBlob(blob=>{
+      item.resultBlob=blob; item.processed=true;
+      // Release decoded pixels unless this is the currently-previewed image
+      if(S.currentIdx < 0 || S.images[S.currentIdx] !== item) item.img = null;
+      resolve();
+    },'image/'+s.format,s.quality);
   });
 }
 function drawWmFull(ctx,w,h,s,cx,cy){
@@ -1756,36 +1784,86 @@ function cancelProcess(){S.cancelFlag=true;$('cancelBtn').style.display='none';s
 // ═══════════════════════════════════════════════════
 // DOWNLOAD
 // ═══════════════════════════════════════════════════
-async function processAndDownload(){
-  const items=S.images;
-  if(!items.length){showNotif('warning','ไม่มีรูปภาพ');return;}
-  const notDone=items.filter(i=>!i.resultBlob);
-  if(notDone.length){showNotif('info',`กำลังประมวลผล ${notDone.length} รูปก่อนดาวน์โหลด...`);await processImages(notDone);}
-  $('downloadBtn').disabled=true;
-  $('processLabel').textContent='กำลังสร้าง ZIP...';
-  const zip=new JSZip();
-  const s=captureSettings();
-  const folder=zip.folder($('folderName').value||'watermarked');
-  let count=0;
-  for(const item of items){
-    if(!item.resultBlob) continue;
-    let fname=s.keepFilename?item.name.replace(/\.[^.]+$/,''):`img_${String(count+1).padStart(5,'0')}`;
-    fname=s.prefix+fname+'.'+s.format;
-    folder.file(fname,item.resultBlob); count++;
-    if(count%100===0){$('processLabel').textContent=`เพิ่มใน ZIP: ${count} / ${items.length}`;await sleep(5);}
+// ─── ZIP chunk size — max files per single ZIP download ──────
+// Splitting large sets prevents one massive blob from sitting in RAM.
+const ZIP_CHUNK = 500;
+
+// Pick compression: STORE is faster and often smaller for already-compressed
+// image formats (JPEG, WebP, PNG). Only DEFLATE non-image files.
+function _zipCompression(format) {
+  return ['jpeg','jpg','webp','gif','heic','heif','avif'].includes(format.toLowerCase())
+    ? 'STORE' : 'DEFLATE';
+}
+
+async function _buildZip(chunk, zipName, s, totalSoFar, grandTotal) {
+  const zip    = new JSZip();
+  const folder = zip.folder($('folderName').value || 'watermarked');
+  const comp   = _zipCompression(s.format);
+  let count = 0;
+
+  for (const item of chunk) {
+    if (!item.resultBlob) continue;
+    let fname = s.keepFilename
+      ? item.name.replace(/\.[^.]+$/, '')
+      : `img_${String(totalSoFar + count + 1).padStart(5, '0')}`;
+    fname = s.prefix + fname + '.' + s.format;
+    folder.file(fname, item.resultBlob, { compression: comp });
+    item.resultBlob = null;   // ✅ release immediately — ZIP owns the data now
+    count++;
+    if (count % 50 === 0) {
+      $('processLabel').textContent = `เพิ่มใน ZIP: ${totalSoFar + count} / ${grandTotal}`;
+      await sleep(5);
+    }
   }
-  $('processLabel').textContent='กำลังบีบอัด ZIP...';
-  await sleep(50);
-  const blob=await zip.generateAsync({type:'blob',compression:'DEFLATE',compressionOptions:{level:1}},m=>{
-    $('processBar').style.width=m.percent.toFixed(0)+'%';
-    $('processCount').textContent=m.percent.toFixed(0)+'%';
-  });
-  const url=URL.createObjectURL(blob);
-  const a=document.createElement('a'); a.href=url; a.download=`watermarked_${Date.now()}.zip`; a.click();
+
+  $('processLabel').textContent = `กำลังสร้าง ZIP (${zipName})…`;
+  const blob = await zip.generateAsync(
+    { type: 'blob', compression: comp },
+    m => {
+      $('processBar').style.width   = m.percent.toFixed(0) + '%';
+      $('processCount').textContent = m.percent.toFixed(0) + '%';
+    }
+  );
+  const url = URL.createObjectURL(blob);
+  const a   = document.createElement('a');
+  a.href = url; a.download = zipName; a.click();
+  await sleep(300);                 // give browser time to start the download
   URL.revokeObjectURL(url);
-  $('downloadBtn').disabled=false;
-  $('processLabel').textContent='ดาวน์โหลดเสร็จแล้ว';
-  showNotif('success',`✅ ดาวน์โหลด ZIP ${count} รูปเรียบร้อย`);
+  return count;
+}
+
+async function processAndDownload(){
+  const items = S.images;
+  if (!items.length) { showNotif('warning','ไม่มีรูปภาพ'); return; }
+
+  const notDone = items.filter(i => !i.resultBlob);
+  if (notDone.length) {
+    showNotif('info', `กำลังประมวลผล ${notDone.length} รูปก่อนดาวน์โหลด…`);
+    await processImages(notDone);
+  }
+
+  $('downloadBtn').disabled = true;
+  const s = captureSettings();
+
+  // Split into chunks to avoid one massive ZIP object in RAM
+  const chunks     = [];
+  const readyItems = items.filter(i => i.resultBlob);
+  for (let i = 0; i < readyItems.length; i += ZIP_CHUNK)
+    chunks.push(readyItems.slice(i, i + ZIP_CHUNK));
+
+  const ts   = Date.now();
+  let   done = 0;
+  for (let ci = 0; ci < chunks.length; ci++) {
+    const zipName = chunks.length === 1
+      ? `watermarked_${ts}.zip`
+      : `watermarked_${ts}_part${ci + 1}of${chunks.length}.zip`;
+    done += await _buildZip(chunks[ci], zipName, s, done, readyItems.length);
+  }
+
+  $('downloadBtn').disabled = false;
+  $('processLabel').textContent = 'ดาวน์โหลดเสร็จแล้ว';
+  const parts = chunks.length > 1 ? ` (${chunks.length} ไฟล์ ZIP)` : '';
+  showNotif('success', `✅ ดาวน์โหลด ${done} รูปเรียบร้อย${parts}`);
 }
 
 async function downloadSingle(){
@@ -1966,9 +2044,9 @@ async function loadImageFromBlob(blob, filename) {
   // Convert HEIC/HEIF → JPEG so browsers that can't decode HEIC can still show it
   let displayBlob = blob;
   let displayName = filename;
-  const heicBlob = blob.type === 'image/heic' || blob.type === 'image/heif' ||
-                   /\.(heic|heif)$/i.test(filename);
-  if (heicBlob && typeof heic2any !== 'undefined') {
+  const isHeicBlob = blob.type === 'image/heic' || blob.type === 'image/heif' ||
+                     /\.(heic|heif)$/i.test(filename);
+  if (isHeicBlob && typeof heic2any !== 'undefined') {
     try {
       const result = await heic2any({ blob, toType: 'image/jpeg', quality: 0.92 });
       displayBlob = Array.isArray(result) ? result[0] : result;
@@ -1977,28 +2055,27 @@ async function loadImageFromBlob(blob, filename) {
   }
 
   return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = ev => {
-      const img = new Image();
-      img.onload = () => {
-        const item = {
-          id: nextId++, file: new File([displayBlob], displayName),
-          name: displayName, src: ev.target.result, img,
-          selected: false, processed: false, resultBlob: null, thumb: null,
-        };
-        const tc = document.createElement('canvas');
-        const ts = 100, ratio = img.width / img.height;
-        tc.width  = ratio > 1 ? ts : Math.round(ts * ratio);
-        tc.height = ratio > 1 ? Math.round(ts / ratio) : ts;
-        tc.getContext('2d').drawImage(img, 0, 0, tc.width, tc.height);
-        item.thumb = tc.toDataURL('image/jpeg', 0.65);
-        resolve(item);
+    const file = new File([displayBlob], displayName);
+    const url  = URL.createObjectURL(file);
+    const img  = new Image();
+    img.onload = () => {
+      const item = {
+        id: nextId++, file,
+        name: displayName, w: img.width, h: img.height,
+        src: null, img: null,   // don't keep decoded pixels long-term
+        selected: false, processed: false, resultBlob: null, thumb: null,
       };
-      img.onerror = () => reject(new Error('ไม่สามารถโหลดภาพได้'));
-      img.src = ev.target.result;
+      const tc = document.createElement('canvas');
+      const ts = 100, ratio = img.width / img.height;
+      tc.width  = ratio > 1 ? ts : Math.round(ts * ratio);
+      tc.height = ratio > 1 ? Math.round(ts / ratio) : ts;
+      tc.getContext('2d').drawImage(img, 0, 0, tc.width, tc.height);
+      item.thumb = tc.toDataURL('image/jpeg', 0.65);
+      URL.revokeObjectURL(url);
+      resolve(item);
     };
-    reader.onerror = () => reject(new Error('FileReader error'));
-    reader.readAsDataURL(displayBlob);
+    img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('ไม่สามารถโหลดภาพได้')); };
+    img.src = url;
   });
 }
 
