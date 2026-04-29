@@ -105,6 +105,9 @@ input[type=color] { width: 40px; height: 34px; border: 1px solid var(--border); 
 .btn-success { background: var(--success); color: #001a0d; font-weight: 700; }
 .btn-success:hover { box-shadow: 0 4px 16px var(--success-glow); transform: translateY(-1px); }
 .btn-full { width: 100%; justify-content: center; padding: 11px; }
+.action-choice { background: var(--surface3); border: 1px solid var(--border); color: var(--text-muted); font-weight: 600; border-radius: 8px; }
+.action-choice:hover { border-color: var(--primary); color: var(--primary); background: rgba(124,111,252,0.06); }
+.action-choice.active { background: rgba(124,111,252,0.15); border-color: var(--primary); color: var(--primary); box-shadow: 0 0 0 1px var(--primary); }
 .btn-group { display: flex; gap: 6px; flex-wrap: wrap; }
 
 /* ─── UPLOAD ZONE ────────────────────────────── */
@@ -967,31 +970,48 @@ input[type=color] { width: 40px; height: 34px; border: 1px solid var(--border); 
         <div class="progress-bar"><div class="progress-fill" id="processBar" style="width:0%"></div></div>
         <div id="processRate" style="font-size:0.72rem;color:var(--text-muted);margin-top:4px"></div>
       </div>
-      <button class="btn btn-success btn-full" onclick="processAndDownload()" id="downloadBtn">⬇️ ประมวลผล &amp; ดาวน์โหลด ZIP</button>
+      <!-- ─── ACTION CHOICE ──────────────────────── -->
+      <div class="section-title" style="margin-top:4px">บันทึกผลลัพธ์</div>
+
+      <!-- Drive folder URL (shown when Drive tab active) -->
+      <div id="driveFolderWrap" style="margin-bottom:8px;display:none">
+        <label style="margin-bottom:4px">URL โฟลเดอร์ Google Drive ปลายทาง</label>
+        <input type="text" id="driveUploadFolderUrl"
+          placeholder="https://drive.google.com/drive/folders/…">
+      </div>
+
+      <!-- Two action buttons -->
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+        <button class="btn btn-full action-choice active" id="btnChooseZip"
+          onclick="setExportChoice('zip')" style="padding:10px 6px;font-size:0.8rem">
+          ⬇️ ดาวน์โหลด ZIP
+        </button>
+        <button class="btn btn-full action-choice" id="btnChooseDrive"
+          onclick="setExportChoice('drive')" style="padding:10px 6px;font-size:0.8rem">
+          ☁️ อัพโหลด Drive
+        </button>
+      </div>
+
+      <!-- Upload progress (Drive only) -->
+      <div id="uploadProgRow" style="display:none;margin-top:8px">
+        <div class="progress-label">
+          <span id="uploadLabel">กำลังอัพโหลด…</span>
+          <span id="uploadCount">0 / 0</span>
+        </div>
+        <div class="progress-bar" style="margin-top:3px">
+          <div class="progress-fill" id="uploadBar" style="width:0%"></div>
+        </div>
+      </div>
+      <div id="uploadLog" class="gdrive-log" style="display:none;margin-top:6px"></div>
+
+      <!-- Go button -->
+      <button class="btn btn-success btn-full" style="margin-top:10px"
+        onclick="runExportAction()" id="downloadBtn">⬇️ ประมวลผล &amp; ดาวน์โหลด ZIP</button>
       <button class="btn btn-secondary btn-full" style="margin-top:7px" onclick="downloadSingle()">📄 ดาวน์โหลดภาพปัจจุบัน</button>
       <button class="btn btn-secondary btn-full" style="margin-top:7px;display:none" onclick="cancelProcess()" id="cancelBtn">⛔ หยุดการประมวลผล</button>
       <div style="margin-top:12px;padding:9px 11px;background:var(--surface3);border-radius:8px;font-size:0.74rem;color:var(--text-muted);border:1px solid var(--border2)">
         <b style="color:var(--warning)">⚡ ประสิทธิภาพสูง</b><br>
         ประมวลผลแบบ batch — รองรับ 10,000+ รูปโดยไม่ค้าง
-      </div>
-
-      <!-- ─── UPLOAD TO GOOGLE DRIVE ──────────────── -->
-      <div class="section" style="margin-top:16px">
-        <div class="section-title">☁️ อัพโหลดไป Google Drive</div>
-        <label>URL โฟลเดอร์ปลายทาง</label>
-        <input type="text" id="driveUploadFolderUrl"
-          placeholder="https://drive.google.com/drive/folders/…"
-          style="margin-bottom:8px">
-        <div class="progress-label" id="uploadProgRow" style="display:none">
-          <span id="uploadLabel">กำลังอัพโหลด…</span>
-          <span id="uploadCount">0 / 0</span>
-        </div>
-        <div class="progress-bar" id="uploadProgBar" style="display:none;margin-top:3px">
-          <div class="progress-fill" id="uploadBar" style="width:0%"></div>
-        </div>
-        <div id="uploadLog" class="gdrive-log" style="display:none;margin-top:6px"></div>
-        <button class="btn btn-primary btn-full" style="margin-top:8px"
-          onclick="uploadToDrive()" id="uploadDriveBtn">☁️ อัพโหลดไป Drive</button>
       </div>
     </div>
   </aside>
@@ -1897,6 +1917,30 @@ async function downloadSingle(){
 
 function toggleResize(){$('resizeOptions').style.display=$('resizeOutput').checked?'block':'none';}
 
+// ─── EXPORT CHOICE (ZIP vs Drive) ────────────────
+let _exportChoice = 'zip';  // 'zip' | 'drive'
+
+function setExportChoice(choice) {
+  _exportChoice = choice;
+  $('btnChooseZip').classList.toggle('active',   choice === 'zip');
+  $('btnChooseDrive').classList.toggle('active', choice === 'drive');
+  $('driveFolderWrap').style.display = choice === 'drive' ? '' : 'none';
+  $('downloadBtn').innerHTML = choice === 'drive'
+    ? '☁️ ประมวลผล &amp; อัพโหลดไป Drive'
+    : '⬇️ ประมวลผล &amp; ดาวน์โหลด ZIP';
+  $('downloadBtn').className = choice === 'drive'
+    ? 'btn btn-primary btn-full'
+    : 'btn btn-success btn-full';
+}
+
+async function runExportAction() {
+  if (_exportChoice === 'drive') {
+    await uploadToDrive();
+  } else {
+    await processAndDownload();
+  }
+}
+
 // ═══════════════════════════════════════════════════
 // NOTIFICATIONS
 // ═══════════════════════════════════════════════════
@@ -2340,7 +2384,7 @@ async function uploadToDrive() {
   const readyItems = S.images.filter(i => i.resultBlob);
   if (!readyItems.length) { showNotif('error', 'ไม่มีรูปที่ประมวลผลเสร็จ'); return; }
 
-  const btn = $('uploadDriveBtn');
+  const btn = $('downloadBtn');
   btn.disabled = true;
 
   // Reset log & progress
