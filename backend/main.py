@@ -27,13 +27,15 @@ import io
 import json
 import math
 import os
+import time
+import uuid
 import zipfile
 import asyncio
 import httpx
 from typing import Optional, List
 from dotenv import load_dotenv
 
-from fastapi import FastAPI, File, Form, HTTPException, UploadFile, BackgroundTasks
+from fastapi import BackgroundTasks, FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse, Response, StreamingResponse
 from PIL import Image, ImageDraw, ImageFont
@@ -721,6 +723,14 @@ _UPLOAD_MIME = {
     "tif": "image/tiff", "tiff": "image/tiff",
 }
 
+# ── In-memory job store (resets on server restart; fine for local use) ──
+# Structure:  job_id → { status, total, uploaded, errors, files, error_list, created_at }
+_UPLOAD_JOBS: dict[str, dict] = {}
+
+# Max concurrent Drive API calls per background job (keeps memory + rate-limit low)
+_DRIVE_SEM_LIMIT = 2
+
+
 async def drive_upload_file(
     client: httpx.AsyncClient,
     token: str,
@@ -751,43 +761,98 @@ async def drive_upload_file(
     )
     if r.status_code not in (200, 201):
         raise ValueError(f"HTTP {r.status_code}: {r.text[:300]}")
-    return r.json()   # contains 'id', 'name', 'mimeType', …
+    return r.json()
+
+
+async def _run_upload_job(job_id: str, folder_id: str, files: list[dict]) -> None:
+    """
+    Background task: upload all files to Drive with bounded concurrency.
+    Runs after the HTTP response is already sent — browser can close the tab.
+    """
+    job = _UPLOAD_JOBS[job_id]
+    job["status"] = "uploading"
+    sem = asyncio.Semaphore(_DRIVE_SEM_LIMIT)
+
+    async def _one(fd: dict) -> None:
+        name = fd["name"]
+        async with sem:
+            try:
+                # Each file gets its own short-lived client to avoid timeouts
+                async with httpx.AsyncClient(
+                    limits=httpx.Limits(max_connections=4, max_keepalive_connections=2)
+                ) as client:
+                    token = await _get_access_token(client)
+                    info  = await drive_upload_file(
+                        client, token, folder_id, name, fd["content"], fd["mime"]
+                    )
+                file_id = info.get("id", "")
+                job["files"].append({
+                    "name": info.get("name"),
+                    "id":   file_id,
+                    "url":  f"https://drive.google.com/file/d/{file_id}/view",
+                })
+                job["uploaded"] += 1
+            except Exception as exc:
+                job["errors"] += 1
+                job["error_list"].append({"file": name, "error": str(exc)})
+            finally:
+                fd["content"] = None  # free image bytes from RAM as soon as possible
+
+    await asyncio.gather(*[_one(fd) for fd in files])
+    job["status"] = "done"
+    job["finished_at"] = time.time()
+
+    # Auto-cleanup after 2 hours so the dict doesn't grow forever
+    await asyncio.sleep(7200)
+    _UPLOAD_JOBS.pop(job_id, None)
 
 
 @app.post("/api/drive/upload")
 async def upload_to_drive(
+    background_tasks: BackgroundTasks,
     folder_id: str = Form(...),
     images: List[UploadFile] = File(...),
 ):
     """
-    Upload watermarked images to a specific Google Drive folder.
-    Client sends folder_id + image files; server authenticates via OAuth
-    and uploads directly to Drive — credentials never leave the server.
-    """
-    results, errors = [], []
-    async with httpx.AsyncClient() as client:
-        token = await _get_access_token(client)
-        for upload in images:
-            try:
-                content = await upload.read()
-                ext      = (upload.filename or "img.jpg").rsplit(".", 1)[-1].lower()
-                mime     = _UPLOAD_MIME.get(ext, "image/jpeg")
-                name     = upload.filename or f"image.{ext}"
-                info     = await drive_upload_file(client, token, folder_id, name, content, mime)
-                results.append({
-                    "name": info.get("name"),
-                    "id":   info.get("id"),
-                    "url":  f"https://drive.google.com/file/d/{info.get('id')}/view",
-                })
-            except Exception as e:
-                errors.append({"file": upload.filename, "error": str(e)})
+    Queue watermarked images for background upload to Google Drive.
 
-    return {
-        "uploaded":   len(results),
-        "errors":     len(errors),
-        "files":      results,
-        "error_list": errors,
+    Returns a job_id immediately — the actual Drive uploads happen in a
+    background task so the browser can close the tab without stopping the job.
+    Poll GET /api/drive/job/{job_id} to track progress.
+    """
+    # Read all file bytes NOW (before the request body is released)
+    files: list[dict] = []
+    for upload in images:
+        content = await upload.read()
+        ext  = (upload.filename or "img.jpg").rsplit(".", 1)[-1].lower()
+        mime = _UPLOAD_MIME.get(ext, "image/jpeg")
+        name = upload.filename or f"image.{ext}"
+        files.append({"name": name, "content": content, "mime": mime})
+
+    job_id = uuid.uuid4().hex[:12]
+    _UPLOAD_JOBS[job_id] = {
+        "status":      "queued",
+        "total":       len(files),
+        "uploaded":    0,
+        "errors":      0,
+        "files":       [],
+        "error_list":  [],
+        "created_at":  time.time(),
+        "finished_at": None,
     }
+
+    background_tasks.add_task(_run_upload_job, job_id, folder_id, files)
+
+    return {"job_id": job_id, "queued": len(files)}
+
+
+@app.get("/api/drive/job/{job_id}")
+async def get_upload_job(job_id: str):
+    """Poll upload job status. Returns progress + list of uploaded file URLs."""
+    job = _UPLOAD_JOBS.get(job_id)
+    if not job:
+        raise HTTPException(404, "Job not found — server may have restarted")
+    return job
 
 
 # ─────────────────────────────────────────────────────────────

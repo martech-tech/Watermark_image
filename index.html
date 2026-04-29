@@ -2346,9 +2346,10 @@ function cancelFolderImport() {
 }
 
 // ═══════════════════════════════════════════════════
-// GOOGLE DRIVE UPLOAD
+// GOOGLE DRIVE UPLOAD  (background-job pattern)
 // ═══════════════════════════════════════════════════
 
+// ── log helper ───────────────────────────────────
 function ulog(text, type = 'info') {
   const log = $('uploadLog');
   if (!log) return;
@@ -2361,6 +2362,71 @@ function ulog(text, type = 'info') {
   log.scrollTop = log.scrollHeight;
 }
 
+// ── progress UI helpers ──────────────────────────
+function _uploadUI(label, count, pct) {
+  $('uploadProgRow').style.display = '';
+  $('uploadProgBar').style.display = '';
+  if (label !== null) $('uploadLabel').textContent = label;
+  if (count !== null) $('uploadCount').textContent = count;
+  if (pct   !== null) $('uploadBar').style.width   = pct + '%';
+}
+
+// ── localStorage job tracking ────────────────────
+const _JOB_KEY = 'wmpro_upload_jobs';
+function _saveJob(jobId, meta) {
+  try {
+    const all = JSON.parse(localStorage.getItem(_JOB_KEY) || '{}');
+    all[jobId] = { ...meta, savedAt: Date.now() };
+    // Keep only last 20 jobs
+    const keys = Object.keys(all);
+    if (keys.length > 20) delete all[keys[0]];
+    localStorage.setItem(_JOB_KEY, JSON.stringify(all));
+  } catch {}
+}
+function _loadJobs() {
+  try { return JSON.parse(localStorage.getItem(_JOB_KEY) || '{}'); } catch { return {}; }
+}
+function _removeJob(jobId) {
+  try {
+    const all = _loadJobs();
+    delete all[jobId];
+    localStorage.setItem(_JOB_KEY, JSON.stringify(all));
+  } catch {}
+}
+
+// ── poll one job until done ──────────────────────
+async function _pollJob(jobId, total, onProgress) {
+  let lastLogged = 0;
+  while (true) {
+    await sleep(3000);
+    let data;
+    try {
+      const r = await fetch(`${_base()}/api/drive/job/${jobId}`,
+        { signal: AbortSignal.timeout(10000) });
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      data = await r.json();
+    } catch (e) {
+      ulog(`ตรวจสถานะไม่ได้: ${e.message} — รอแล้วลองใหม่…`, 'warn');
+      continue;
+    }
+
+    // Log newly finished files
+    const newFiles = (data.files || []).slice(lastLogged);
+    newFiles.forEach(f => ulog(f.name, 'ok'));
+    (data.error_list || []).slice(lastLogged - (data.files?.length - newFiles.length || 0))
+      .forEach(e => ulog(`${e.file}: ${e.error}`, 'err'));
+    lastLogged = (data.files || []).length;
+
+    const done = data.uploaded + data.errors;
+    const pct  = total > 0 ? Math.round(done / total * 100) : 0;
+    _uploadUI(`อัพโหลดแล้ว ${data.uploaded} รูป…`, `${done} / ${total}`, pct);
+    onProgress(data);
+
+    if (data.status === 'done') return data;
+  }
+}
+
+// ── main upload function ──────────────────────────
 async function uploadToDrive() {
   const folderUrl = ($('driveUploadFolderUrl').value || '').trim();
   if (!folderUrl) { showNotif('warning', 'ใส่ URL โฟลเดอร์ปลายทางก่อน'); return; }
@@ -2370,90 +2436,147 @@ async function uploadToDrive() {
     showNotif('error', 'URL โฟลเดอร์ไม่ถูกต้อง — ต้องเป็น drive.google.com/drive/folders/…');
     return;
   }
-
   if (!S.images.length) { showNotif('warning', 'ไม่มีรูปภาพ'); return; }
 
-  // Process any images that don't have a watermarked result yet
+  // ── Step 1: process watermarks (browser-side) ────
   const notDone = S.images.filter(i => !i.resultBlob);
   if (notDone.length) {
-    showNotif('info', `กำลังประมวลผล ${notDone.length} รูปก่อนอัพโหลด…`);
+    showNotif('info', `กำลังใส่ลายน้ำ ${notDone.length} รูปก่อนอัพโหลด…`);
     await processImages(notDone);
     updateStats();
   }
-
   const readyItems = S.images.filter(i => i.resultBlob);
   if (!readyItems.length) { showNotif('error', 'ไม่มีรูปที่ประมวลผลเสร็จ'); return; }
 
-  const btn = $('downloadBtn');
+  const btn   = $('downloadBtn');
   btn.disabled = true;
-
-  // Reset log & progress
   $('uploadLog').innerHTML = '';
   $('uploadLog').style.display = '';
-  $('uploadProgRow').style.display = '';
-  $('uploadProgBar').style.display = '';
 
   const total = readyItems.length;
-  let uploaded = 0, failed = 0;
+  const s     = captureSettings();
+  const ext   = s.format === 'jpeg' ? 'jpg' : s.format;
+  // Send 5 files per request → keeps each request small (~5–25 MB)
+  const BATCH = 5;
 
-  $('uploadCount').textContent = `0 / ${total}`;
-  $('uploadLabel').textContent  = 'กำลังอัพโหลด…';
-  $('uploadBar').style.width    = '0%';
+  _uploadUI('กำลังส่งไฟล์ไปยัง server…', `0 / ${total}`, 0);
+  ulog(`📤 ส่ง ${total} รูป → server (ทีละ ${BATCH} ไฟล์)`, 'load');
 
-  ulog(`📂 ${total} รูป → โฟลเดอร์ Drive`, 'load');
+  let sentOk = 0, jobIds = [];
 
-  const s   = captureSettings();
-  const ext = s.format === 'jpeg' ? 'jpg' : s.format;
-  const BATCH = 10;  // files per request
-
+  // ── Step 2: send all batches to server (quick POST, returns job_id) ──
   for (let i = 0; i < readyItems.length; i += BATCH) {
     const batch = readyItems.slice(i, i + BATCH);
     const fd    = new FormData();
     fd.append('folder_id', folderId);
-
     batch.forEach((item, bi) => {
       const baseName = s.keepFilename
         ? item.name.replace(/\.[^.]+$/, '')
         : `img_${String(i + bi + 1).padStart(5, '0')}`;
-      const fname = s.prefix + baseName + '.' + ext;
-      fd.append('images', item.resultBlob, fname);
+      fd.append('images', item.resultBlob, s.prefix + baseName + '.' + ext);
     });
 
     try {
       const r = await fetch(`${_base()}/api/drive/upload`, {
         method: 'POST', body: fd,
-        signal: AbortSignal.timeout(120000),
+        signal: AbortSignal.timeout(60000),
       });
       if (!r.ok) {
         const err = await r.json().catch(() => ({}));
         throw new Error(err.detail || `HTTP ${r.status}`);
       }
-      const data = await r.json();
-      uploaded += data.uploaded   || 0;
-      failed   += data.errors     || 0;
-      (data.files      || []).forEach(f => ulog(`${f.name}`, 'ok'));
-      (data.error_list || []).forEach(e => ulog(`${e.file}: ${e.error}`, 'err'));
-    } catch (err) {
-      failed += batch.length;
-      ulog(`Batch ${Math.floor(i / BATCH) + 1} ล้มเหลว: ${err.message}`, 'err');
+      const { job_id, queued } = await r.json();
+      jobIds.push(job_id);
+      sentOk += queued;
+      _saveJob(job_id, { folderId, queued, sentAt: Date.now() });
+      ulog(`📬 batch ${jobIds.length}: ${queued} ไฟล์ → job ${job_id}`, 'load');
+    } catch (e) {
+      ulog(`❌ batch ${Math.floor(i/BATCH)+1} ส่งไม่ได้: ${e.message}`, 'err');
     }
 
-    const done = Math.min(i + BATCH, total);
-    $('uploadBar').style.width    = Math.round(done / total * 100) + '%';
-    $('uploadCount').textContent  = `${done} / ${total}`;
-    $('uploadLabel').textContent  = `อัพโหลดแล้ว ${uploaded} รูป…`;
+    // Small delay so server isn't flooded with simultaneous POSTs
+    await sleep(300);
+    const sent = Math.min(i + BATCH, total);
+    _uploadUI(`ส่งไปแล้ว ${sent} / ${total}…`, `${sent} / ${total}`,
+              Math.round(sent / total * 30)); // first 30% = submission phase
   }
 
-  btn.disabled = false;
-  $('uploadLabel').textContent = uploaded > 0 ? `✅ เสร็จ: ${uploaded} รูป` : '❌ ล้มเหลวทั้งหมด';
-  $('uploadBar').style.width   = '100%';
+  if (!jobIds.length) {
+    showNotif('error', 'ส่งไฟล์ไม่ได้เลย — ตรวจสอบ backend');
+    btn.disabled = false;
+    return;
+  }
 
-  if (uploaded > 0) showNotif('success', `☁️ อัพโหลด ${uploaded} รูปไป Google Drive เรียบร้อย`);
-  if (failed   > 0) showNotif('warning', `⚠️ อัพโหลดไม่ได้ ${failed} รูป`);
+  showNotif('info', `☁️ Server รับไฟล์แล้ว ${sentOk} รูป — กำลัง upload ไป Drive ใน background…`);
+  ulog(`✅ Server รับครบ — ปิดหน้านี้ได้ server จะทำต่อเอง`, 'ok');
+  ulog(`📋 Job IDs: ${jobIds.join(', ')}`, 'load');
+
+  // ── Step 3: poll all jobs concurrently ──────────
+  let totalUploaded = 0, totalErrors = 0;
+
+  await Promise.all(jobIds.map(jobId =>
+    _pollJob(jobId, sentOk / jobIds.length, (data) => {
+      // aggregate across all jobs for the progress bar (approximate)
+      const allJobs = jobIds.map(id => _UPLOAD_JOBS_CACHE[id] || data);
+      const totalDone = allJobs.reduce((s, j) => s + (j.uploaded||0) + (j.errors||0), 0);
+      const pct = 30 + Math.round(totalDone / total * 70); // 30–100%
+      _uploadUI(null, `${totalDone} / ${total}`, Math.min(pct, 99));
+    }).then(result => {
+      totalUploaded += result.uploaded || 0;
+      totalErrors   += result.errors   || 0;
+      _removeJob(jobId);
+    }).catch(() => {})
+  ));
+
+  btn.disabled = false;
+  _uploadUI(
+    totalUploaded > 0 ? `✅ เสร็จ: ${totalUploaded} รูป` : '❌ ล้มเหลวทั้งหมด',
+    `${totalUploaded} / ${total}`, 100
+  );
+
+  if (totalUploaded > 0) showNotif('success', `☁️ อัพโหลด ${totalUploaded} รูปไป Google Drive เรียบร้อย`);
+  if (totalErrors   > 0) showNotif('warning',  `⚠️ อัพโหลดไม่ได้ ${totalErrors} รูป`);
+}
+
+// cache for aggregated polling (not critical, just for progress bar)
+const _UPLOAD_JOBS_CACHE = {};
+
+// ── Resume-job panel: check pending jobs after reopening tab ─
+async function checkPendingJobs() {
+  const jobs = _loadJobs();
+  const ids  = Object.keys(jobs);
+  if (!ids.length) return;
+
+  ulog(`🔄 พบ ${ids.length} job ที่ยังไม่เสร็จ — กำลังตรวจสอบสถานะ…`, 'load');
+  $('uploadProgRow').style.display = '';
+  $('uploadLog').style.display     = '';
+
+  for (const jobId of ids) {
+    try {
+      const r = await fetch(`${_base()}/api/drive/job/${jobId}`,
+        { signal: AbortSignal.timeout(8000) });
+      if (r.status === 404) {
+        ulog(`Job ${jobId}: server ไม่พบ (อาจ restart แล้ว)`, 'warn');
+        _removeJob(jobId);
+        continue;
+      }
+      const data = await r.json();
+      if (data.status === 'done') {
+        ulog(`Job ${jobId}: เสร็จแล้ว — อัพโหลด ${data.uploaded} รูป`, 'ok');
+        _removeJob(jobId);
+      } else {
+        ulog(`Job ${jobId}: ${data.status} — ${data.uploaded}/${data.total} รูป`, 'load');
+      }
+    } catch {
+      ulog(`Job ${jobId}: ติดต่อ server ไม่ได้`, 'warn');
+    }
+  }
 }
 
 // ─── INIT ────────────────────────────────────────
 showNotif('info','👋 ยินดีต้อนรับ — อัพโหลดรูปเพื่อเริ่มต้น');
+// Auto-check any upload jobs that were running when tab was last closed
+setTimeout(() => checkPendingJobs(), 1500);
 </script>
 </body>
 </html>
