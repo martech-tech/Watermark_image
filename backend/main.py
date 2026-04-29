@@ -23,6 +23,7 @@ Endpoints:
     POST /api/watermark/batch           — multiple images → ZIP
 """
 
+import base64
 import io
 import json
 import math
@@ -61,6 +62,11 @@ DRIVE_DL_TIMEOUT     = 30    # seconds per file
 DRIVE_LIST_PAGE      = 1000  # files per API page
 
 _DRIVE_CONFIGURED = bool(GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET and GOOGLE_REFRESH_TOKEN)
+
+# ── Access-token cache (persists for the lifetime of this process/instance) ──
+# Eliminates a round-trip to Google's token endpoint on every file download.
+_token_cache: dict = {"token": "", "expires_at": 0.0}
+_token_lock  = asyncio.Lock()
 
 
 # ─────────────────────────────────────────────────────────────
@@ -263,27 +269,45 @@ def _wm_settings(
 # Google Drive API helpers
 # ─────────────────────────────────────────────────────────────
 async def _get_access_token(client: httpx.AsyncClient) -> str:
-    """Exchange refresh token for a short-lived access token."""
-    if not _DRIVE_CONFIGURED:
-        raise HTTPException(
-            400,
-            "ยังไม่ได้ตั้งค่า Google OAuth credentials ใน .env — "
-            "ต้องมี GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET และ GOOGLE_REFRESH_TOKEN"
+    """
+    Return a valid Drive access token.
+    Uses a module-level cache so repeated calls within the same process
+    skip the token-exchange round-trip (saves ~150-250 ms per file).
+    """
+    now = time.time()
+    # Fast path — reuse cached token (keep 2-min safety buffer before expiry)
+    if _token_cache["token"] and _token_cache["expires_at"] > now + 120:
+        return _token_cache["token"]
+
+    # Slow path — refresh (only one coroutine at a time)
+    async with _token_lock:
+        # Double-check after acquiring the lock
+        if _token_cache["token"] and _token_cache["expires_at"] > now + 120:
+            return _token_cache["token"]
+
+        if not _DRIVE_CONFIGURED:
+            raise HTTPException(
+                400,
+                "ยังไม่ได้ตั้งค่า Google OAuth credentials ใน .env — "
+                "ต้องมี GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET และ GOOGLE_REFRESH_TOKEN"
+            )
+        r = await client.post(
+            "https://oauth2.googleapis.com/token",
+            data={
+                "client_id":     GOOGLE_CLIENT_ID,
+                "client_secret": GOOGLE_CLIENT_SECRET,
+                "refresh_token": GOOGLE_REFRESH_TOKEN,
+                "grant_type":    "refresh_token",
+            },
+            timeout=15,
         )
-    r = await client.post(
-        "https://oauth2.googleapis.com/token",
-        data={
-            "client_id":     GOOGLE_CLIENT_ID,
-            "client_secret": GOOGLE_CLIENT_SECRET,
-            "refresh_token": GOOGLE_REFRESH_TOKEN,
-            "grant_type":    "refresh_token",
-        },
-        timeout=15,
-    )
-    data = r.json()
-    if "error" in data:
-        raise HTTPException(400, f"OAuth error: {data.get('error_description', data['error'])}")
-    return data["access_token"]
+        data = r.json()
+        if "error" in data:
+            raise HTTPException(400, f"OAuth error: {data.get('error_description', data['error'])}")
+
+        _token_cache["token"]      = data["access_token"]
+        _token_cache["expires_at"] = now + data.get("expires_in", 3600)
+        return _token_cache["token"]
 
 
 async def drive_list_folder(
@@ -403,6 +427,64 @@ async def proxy_drive_file(file_id: str):
             pass  # serve original bytes; browser will show its own error
 
     return Response(content=content, media_type=content_type)
+
+
+@app.post("/api/drive/files-proxy")
+async def proxy_drive_files_batch(
+    file_ids: str = Form(..., description="Comma-separated Drive file IDs (max 10)"),
+):
+    """
+    Download up to 10 Drive files IN PARALLEL and return them as base64 JSON.
+    One HTTP round-trip from browser replaces N individual requests,
+    and one cached token serves the entire batch.
+    """
+    ids = [i.strip() for i in file_ids.split(",") if i.strip()][:10]
+    if not ids:
+        raise HTTPException(400, "file_ids is empty")
+
+    # Shared httpx client + single token for all parallel downloads
+    limits = httpx.Limits(max_connections=len(ids) + 2, max_keepalive_connections=len(ids))
+    async with httpx.AsyncClient(limits=limits) as client:
+        token = await _get_access_token(client)
+
+        async def _fetch_one(fid: str) -> dict:
+            try:
+                r = await client.get(
+                    f"{DRIVE_API_BASE}/files/{fid}",
+                    params={"alt": "media"},
+                    headers={"Authorization": f"Bearer {token}"},
+                    timeout=DRIVE_DL_TIMEOUT,
+                    follow_redirects=True,
+                )
+                if r.status_code != 200:
+                    return {"id": fid, "ok": False, "error": f"HTTP {r.status_code}"}
+
+                content = r.content
+                ct = r.headers.get("content-type", "image/jpeg").split(";")[0].strip()
+
+                # Convert HEIC → JPEG on server so browser doesn't need heic2any
+                if ct in ("image/heic", "image/heif"):
+                    try:
+                        img = Image.open(io.BytesIO(content))
+                        buf = io.BytesIO()
+                        img.convert("RGB").save(buf, format="JPEG", quality=92)
+                        content = buf.getvalue()
+                        ct = "image/jpeg"
+                    except Exception:
+                        pass
+
+                return {
+                    "id":   fid,
+                    "ok":   True,
+                    "mime": ct,
+                    "data": base64.b64encode(content).decode(),
+                }
+            except Exception as exc:
+                return {"id": fid, "ok": False, "error": str(exc)}
+
+        results = await asyncio.gather(*[_fetch_one(fid) for fid in ids])
+
+    return {"files": list(results)}
 
 
 @app.get("/api/drive/status")

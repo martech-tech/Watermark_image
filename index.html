@@ -2292,6 +2292,15 @@ async function scanGdriveFolder() {
 }
 
 // ─── IMPORT ALL FOLDER FILES ──────────────────────
+
+// แปลง base64 → Blob (ใช้กับ response จาก /api/drive/files-proxy)
+function _b64toBlob(b64, mime) {
+  const bin = atob(b64);
+  const buf = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) buf[i] = bin.charCodeAt(i);
+  return new Blob([buf], { type: mime });
+}
+
 async function importGdriveFolder() {
   const allFiles = GD.folderFiles;
   if (!allFiles.length) { showNotif('warning', 'สแกนโฟลเดอร์ก่อน'); return; }
@@ -2312,17 +2321,54 @@ async function importGdriveFolder() {
   }
   _setProgress('กำลังนำเข้า…', `0 / ${total}`, 0);
 
-  // ── helper: download + add one file ─────────────
+  // ── โหลด 1 ไฟล์ จาก blob/base64 แล้วเพิ่มเข้า gallery ──
+  async function _addFile(f, blob, mime) {
+    const ext      = mime.split('/')[1]?.split(';')[0] || 'jpg';
+    const filename = f.name.match(/\.[a-z]+$/i) ? f.name : `${f.name}.${ext}`;
+    const item     = await loadImageFromBlob(blob, filename);
+    S.images.push(item);
+    ok++;
+    flog(`fi-${f.id}`, 'ok', '✓', `✅ ${filename} (${item.w}×${item.h})`);
+    renderGallery(); updateStats();
+    if (S.currentIdx < 0 && S.images.length) showPreview(0);
+  }
+
+  // ── Batch API: ส่ง IDs ไปยัง server → server โหลดทุกไฟล์พร้อมกัน ──
+  // คืน map: fileId → { blob, mime } | null
+  async function _fetchBatch(files) {
+    const idMap = Object.fromEntries(files.map(f => [f.id, f]));
+    try {
+      const fd = new FormData();
+      fd.append('file_ids', files.map(f => f.id).join(','));
+      const r = await fetch(`${_base()}/api/drive/files-proxy`, {
+        method: 'POST', body: fd,
+        signal: AbortSignal.timeout(60000),
+      });
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      const { files: results } = await r.json();
+      const out = {};
+      for (const res of results) {
+        if (res.ok) {
+          out[res.id] = { blob: _b64toBlob(res.data, res.mime), mime: res.mime };
+        } else {
+          flog(`fi-${res.id}`, 'err', '✗', `❌ ${idMap[res.id]?.name} — ${res.error}`);
+          out[res.id] = null;
+        }
+      }
+      return out;
+    } catch (e) {
+      // Batch request itself failed — mark all as null for retry
+      files.forEach(f => flog(`fi-${f.id}`, 'err', '✗', `❌ ${f.name} — batch error: ${e.message}`));
+      return Object.fromEntries(files.map(f => [f.id, null]));
+    }
+  }
+
+  // ── fallback: โหลดทีละไฟล์ (ใช้ใน retry) ──
   async function _importOne(f) {
     try {
       const { blob, ext } = await fetchGdriveImage(f.id);
-      const filename = f.name.match(/\.[a-z]+$/i) ? f.name : `${f.name}.${ext}`;
-      const item = await loadImageFromBlob(blob, filename);
-      S.images.push(item);
-      ok++;
-      flog(`fi-${f.id}`, 'ok', '✓', `✅ ${filename} (${item.w}×${item.h})`);
-      renderGallery(); updateStats();
-      if (S.currentIdx < 0 && S.images.length) showPreview(0);
+      const mime = `image/${ext}`;
+      await _addFile(f, blob, mime);
       return true;
     } catch (err) {
       flog(`fi-${f.id}`, 'err', '✗', `❌ ${f.name} — ${err.message}`);
@@ -2330,30 +2376,47 @@ async function importGdriveFolder() {
     }
   }
 
-  // ── Round 0: main pass — concurrent BATCH=5 ─────
-  const BATCH = 5;
+  // ════════════════════════════════════════════════
+  // Round 0 — BATCH API: 3 กลุ่ม × 8 ไฟล์ = 24 ไฟล์/รอบ
+  // ════════════════════════════════════════════════
+  const FILES_PER_REQ   = 8;   // ไฟล์ต่อ 1 POST (server โหลดพร้อมกันหมด)
+  const CONCURRENT_REQS = 3;   // จำนวน POST ที่วิ่งพร้อมกัน
+  const SUPER = FILES_PER_REQ * CONCURRENT_REQS;  // 24 ไฟล์/รอบ
+
   let failedFiles = [];
-  let processed = 0;
 
-  for (let i = 0; i < allFiles.length; i += BATCH) {
+  for (let i = 0; i < allFiles.length; i += SUPER) {
     if (GD.cancelFlag) break;
-    const batch = allFiles.slice(i, i + BATCH);
 
-    // ดาวน์โหลด 5 ไฟล์พร้อมกัน เร็วกว่า sequential 5×
-    const results = await Promise.allSettled(batch.map(f => _importOne(f)));
-    results.forEach((r, idx) => {
-      if (r.status === 'rejected' || r.value === false) {
-        fail++;
-        failedFiles.push(batch[idx]);
+    const superSlice = allFiles.slice(i, i + SUPER);
+    // แบ่งเป็น 3 กลุ่ม แต่ละกลุ่ม 8 ไฟล์
+    const batches = [];
+    for (let j = 0; j < superSlice.length; j += FILES_PER_REQ)
+      batches.push(superSlice.slice(j, j + FILES_PER_REQ));
+
+    // ส่ง 3 requests พร้อมกัน
+    const batchMaps = await Promise.all(batches.map(b => _fetchBatch(b)));
+
+    // เพิ่มรูปที่โหลดสำเร็จเข้า gallery (พร้อมกัน)
+    await Promise.allSettled(superSlice.map(async (f, idx) => {
+      const map  = batchMaps[Math.floor(idx / FILES_PER_REQ)];
+      const data = map?.[f.id];
+      if (data) {
+        try { await _addFile(f, data.blob, data.mime); }
+        catch { fail++; failedFiles.push(f); }
+      } else {
+        fail++; failedFiles.push(f);
       }
-    });
+    }));
 
-    processed = Math.min(i + BATCH, total);
-    _setProgress(`นำเข้าแล้ว ${ok} รูป…`, `${processed} / ${total}`,
-                 Math.round(processed / total * 100));
+    const done = Math.min(i + SUPER, total);
+    _setProgress(`นำเข้าแล้ว ${ok} รูป…`, `${done} / ${total}`,
+                 Math.round(done / total * 100));
   }
 
-  // ── Rounds 1–2: retry failed files (sequential — ไม่แย่งกัน) ──
+  // ════════════════════════════════════════════════
+  // Rounds 1–2 — retry ด้วย single-file (เสถียรกว่า batch)
+  // ════════════════════════════════════════════════
   for (let round = 1; round <= 2 && failedFiles.length > 0 && !GD.cancelFlag; round++) {
     const toRetry = [...failedFiles];
     failedFiles = [];
