@@ -2143,10 +2143,10 @@ async function loadImageFromBlob(blob, filename) {
 }
 
 async function fetchGdriveImage(fileId) {
-  // Strategy 1: Backend proxy — API key อยู่ที่ server, ไม่เปิดเผยใน browser
+  // Strategy 1: Backend proxy (OAuth อยู่ที่ server)
   try {
-    const url = `${_base()}/api/drive/file/${fileId}`;
-    const res = await fetch(url, { signal: AbortSignal.timeout(30000) });
+    const res = await fetch(`${_base()}/api/drive/file/${fileId}`,
+      { signal: AbortSignal.timeout(45000) });
     if (res.ok) {
       const ct   = res.headers.get('content-type') || 'image/jpeg';
       const blob = await res.blob();
@@ -2156,10 +2156,12 @@ async function fetchGdriveImage(fileId) {
       }
     }
   } catch { /* ลองวิธีต่อไป */ }
+
   // Strategy 2: thumbnail (fallback สำหรับไฟล์สาธารณะ)
   try {
-    const thumbUrl = `https://drive.google.com/thumbnail?id=${fileId}&sz=w2048`;
-    const res = await fetch(thumbUrl, { signal: AbortSignal.timeout(15000) });
+    const res = await fetch(
+      `https://drive.google.com/thumbnail?id=${fileId}&sz=w2048`,
+      { signal: AbortSignal.timeout(15000) });
     if (res.ok) {
       const ct = res.headers.get('content-type') || '';
       if (ct.startsWith('image/')) {
@@ -2171,7 +2173,8 @@ async function fetchGdriveImage(fileId) {
       }
     }
   } catch { /* ล้มเหลว */ }
-  throw new Error('ดาวน์โหลดไม่ได้ — ตรวจสอบว่า Backend กำลังทำงาน และ GOOGLE_API_KEY ตั้งค่าแล้ว');
+
+  throw new Error('ดาวน์โหลดไม่ได้');
 }
 
 async function importFromGdrive() {
@@ -2290,54 +2293,87 @@ async function scanGdriveFolder() {
 
 // ─── IMPORT ALL FOLDER FILES ──────────────────────
 async function importGdriveFolder() {
-  const files = GD.folderFiles;
-  if (!files.length) { showNotif('warning', 'สแกนโฟลเดอร์ก่อน'); return; }
+  const allFiles = GD.folderFiles;
+  if (!allFiles.length) { showNotif('warning', 'สแกนโฟลเดอร์ก่อน'); return; }
 
   GD.cancelFlag = false;
-  const total = files.length;
+  const total   = allFiles.length;
   let ok = 0, fail = 0;
 
-  // show progress (null-safe for both old and new UI)
   const cancelBtn = $('btnDriveCancel') || $('btnCancelFolder');
   if (cancelBtn) cancelBtn.style.display = '';
   const pw = $('folderProgressWrap');
-  if (pw) { pw.classList.add('show'); }
-  if ($('folderProgressLabel')) $('folderProgressLabel').textContent = 'กำลังนำเข้า…';
-  if ($('folderProgressCount')) $('folderProgressCount').textContent = `0 / ${total}`;
-  if ($('folderProgressBar'))   $('folderProgressBar').style.width = '0%';
+  if (pw) pw.classList.add('show');
 
-  const BATCH = 5;
-  for (let i = 0; i < files.length; i += BATCH) {
-    if (GD.cancelFlag) break;
-    const batch = files.slice(i, i + BATCH);
+  function _setProgress(label, count, pct) {
+    if ($('folderProgressLabel')) $('folderProgressLabel').textContent = label;
+    if ($('folderProgressCount')) $('folderProgressCount').textContent = count;
+    if ($('folderProgressBar'))   $('folderProgressBar').style.width  = pct + '%';
+  }
+  _setProgress('กำลังนำเข้า…', `0 / ${total}`, 0);
 
-    await Promise.all(batch.map(async (f) => {
-      try {
-        const { blob, ext } = await fetchGdriveImage(f.id);
-        const filename = f.name.match(/\.[a-z]+$/i) ? f.name : `${f.name}.${ext}`;
-        const item = await loadImageFromBlob(blob, filename);
-        S.images.push(item);
-        ok++;
-        flog(`fi-${f.id}`, 'ok', '✓', `✅ ${filename} (${item.w}×${item.h})`);
-      } catch (err) {
-        fail++;
-        flog(`fi-${f.id}`, 'err', '✗', `❌ ${f.name} — ${err.message}`);
-      }
-    }));
-
-    const done = Math.min(i + BATCH, total);
-    const pct  = Math.round(done / total * 100);
-    if ($('folderProgressBar'))   $('folderProgressBar').style.width = pct + '%';
-    if ($('folderProgressCount')) $('folderProgressCount').textContent = `${done} / ${total}`;
-    if ($('folderProgressLabel')) $('folderProgressLabel').textContent = `นำเข้าแล้ว ${ok} รูป…`;
-    renderGallery(); updateStats();
-    if (S.currentIdx < 0 && S.images.length) showPreview(0);
-    await sleep(5);
+  // ── helper: download + add one file ───────────────
+  async function _importOne(f) {
+    try {
+      const { blob, ext } = await fetchGdriveImage(f.id);
+      const filename = f.name.match(/\.[a-z]+$/i) ? f.name : `${f.name}.${ext}`;
+      const item = await loadImageFromBlob(blob, filename);
+      S.images.push(item);
+      ok++;
+      flog(`fi-${f.id}`, 'ok', '✓', `✅ ${filename} (${item.w}×${item.h})`);
+      renderGallery(); updateStats();
+      if (S.currentIdx < 0 && S.images.length) showPreview(0);
+      return true;
+    } catch (err) {
+      flog(`fi-${f.id}`, 'err', '✗', `❌ ${f.name} — ${err.message}`);
+      return false;
+    }
   }
 
-  if ($('folderProgressLabel')) $('folderProgressLabel').textContent = GD.cancelFlag ? 'หยุดแล้ว' : 'เสร็จสิ้น';
+  // ── Round 0: main pass (sequential — 1 file at a time) ──
+  let failedFiles = [];
+  for (let i = 0; i < allFiles.length; i++) {
+    if (GD.cancelFlag) break;
+    const f = allFiles[i];
+    const success = await _importOne(f);
+    if (!success) { fail++; failedFiles.push(f); }
+    _setProgress(`นำเข้าแล้ว ${ok} รูป…`, `${i + 1} / ${total}`,
+                 Math.round((i + 1) / total * 100));
+  }
+
+  // ── Rounds 1–2: retry failed files ────────────────
+  for (let round = 1; round <= 2 && failedFiles.length > 0 && !GD.cancelFlag; round++) {
+    const toRetry = [...failedFiles];
+    failedFiles = [];
+    flog(`retry-${round}`, 'warn', '⚠',
+         `🔄 รอบที่ ${round}: ลองใหม่ ${toRetry.length} ไฟล์ที่ล้มเหลว…`);
+    _setProgress(`ลองใหม่รอบที่ ${round}…`, `${toRetry.length} ไฟล์`, 0);
+    await sleep(2000 * round);   // wait longer before each retry
+
+    for (let i = 0; i < toRetry.length; i++) {
+      if (GD.cancelFlag) break;
+      const f       = toRetry[i];
+      const success = await _importOne(f);
+      if (!success) {
+        failedFiles.push(f);
+      } else {
+        fail--;   // downgrade from fail to ok
+      }
+      _setProgress(`ลองใหม่รอบที่ ${round}: ${i + 1} / ${toRetry.length}`,
+                   `${i + 1} / ${toRetry.length}`,
+                   Math.round((i + 1) / toRetry.length * 100));
+    }
+  }
+
+  // ── Done ──────────────────────────────────────────
   if (cancelBtn) cancelBtn.style.display = 'none';
-  showNotif('success', `✅ นำเข้าจากโฟลเดอร์ ${ok} รูป${fail ? ` (ล้มเหลว ${fail})` : ''}`);
+  const stillFail = failedFiles.length;
+  _setProgress(
+    GD.cancelFlag ? 'หยุดแล้ว' : `เสร็จสิ้น — ${ok} รูป${stillFail ? ` (ล้มเหลว ${stillFail})` : ''}`,
+    `${ok} / ${total}`, 100
+  );
+  if (ok > 0)        showNotif('success', `✅ นำเข้าจากโฟลเดอร์ ${ok} รูป`);
+  if (stillFail > 0) showNotif('warning', `⚠️ โหลดไม่ได้ ${stillFail} ไฟล์ (ลองแล้ว 3 รอบ)`);
 }
 
 function cancelFolderImport() {
