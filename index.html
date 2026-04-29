@@ -2382,8 +2382,19 @@ function cancelFolderImport() {
 }
 
 // ═══════════════════════════════════════════════════
-// GOOGLE DRIVE UPLOAD  (background-job pattern)
+// GOOGLE DRIVE UPLOAD  — chunk pipeline
 // ═══════════════════════════════════════════════════
+//
+// Flow per chunk (CHUNK_SIZE รูป):
+//   A. ใส่ลายน้ำใน browser (4 concurrent, Canvas)
+//   B. ส่งไป server ทีละ UP_BATCH ไฟล์ (server upload Drive ใน background)
+//   C. คืน RAM ทันที → ไปชุดต่อไป
+//
+// ข้อดี: RAM คงที่ไม่ว่าจะมีกี่หมื่นรูป, server ไม่โดนกด
+// ───────────────────────────────────────────────────
+
+const CHUNK_SIZE = 50;   // รูปต่อรอบ (watermark+upload+free)
+const UP_BATCH   = 5;    // ไฟล์ต่อ 1 POST ไปยัง server
 
 // ── log helper ───────────────────────────────────
 function ulog(text, type = 'info') {
@@ -2398,7 +2409,7 @@ function ulog(text, type = 'info') {
   log.scrollTop = log.scrollHeight;
 }
 
-// ── progress UI helpers ──────────────────────────
+// ── progress bar helper ──────────────────────────
 function _uploadUI(label, count, pct) {
   $('uploadProgRow').style.display = '';
   $('uploadProgBar').style.display = '';
@@ -2407,205 +2418,161 @@ function _uploadUI(label, count, pct) {
   if (pct   !== null) $('uploadBar').style.width   = pct + '%';
 }
 
-// ── localStorage job tracking ────────────────────
+// ── localStorage: track job IDs so reopening tab can check status ──
 const _JOB_KEY = 'wmpro_upload_jobs';
 function _saveJob(jobId, meta) {
   try {
     const all = JSON.parse(localStorage.getItem(_JOB_KEY) || '{}');
     all[jobId] = { ...meta, savedAt: Date.now() };
-    // Keep only last 20 jobs
     const keys = Object.keys(all);
-    if (keys.length > 20) delete all[keys[0]];
+    if (keys.length > 30) delete all[keys[0]];
     localStorage.setItem(_JOB_KEY, JSON.stringify(all));
   } catch {}
 }
-function _loadJobs() {
-  try { return JSON.parse(localStorage.getItem(_JOB_KEY) || '{}'); } catch { return {}; }
-}
-function _removeJob(jobId) {
-  try {
-    const all = _loadJobs();
-    delete all[jobId];
-    localStorage.setItem(_JOB_KEY, JSON.stringify(all));
-  } catch {}
-}
+function _loadJobs()  { try { return JSON.parse(localStorage.getItem(_JOB_KEY) || '{}'); } catch { return {}; } }
+function _removeJob(id) { try { const a = _loadJobs(); delete a[id]; localStorage.setItem(_JOB_KEY, JSON.stringify(a)); } catch {} }
 
-// ── poll one job until done ──────────────────────
-async function _pollJob(jobId, total, onProgress) {
-  let lastLogged = 0;
-  while (true) {
-    await sleep(3000);
-    let data;
-    try {
-      const r = await fetch(`${_base()}/api/drive/job/${jobId}`,
-        { signal: AbortSignal.timeout(10000) });
-      if (!r.ok) throw new Error(`HTTP ${r.status}`);
-      data = await r.json();
-    } catch (e) {
-      ulog(`ตรวจสถานะไม่ได้: ${e.message} — รอแล้วลองใหม่…`, 'warn');
-      continue;
-    }
-
-    // Log newly finished files
-    const newFiles = (data.files || []).slice(lastLogged);
-    newFiles.forEach(f => ulog(f.name, 'ok'));
-    (data.error_list || []).slice(lastLogged - (data.files?.length - newFiles.length || 0))
-      .forEach(e => ulog(`${e.file}: ${e.error}`, 'err'));
-    lastLogged = (data.files || []).length;
-
-    const done = data.uploaded + data.errors;
-    const pct  = total > 0 ? Math.round(done / total * 100) : 0;
-    _uploadUI(`อัพโหลดแล้ว ${data.uploaded} รูป…`, `${done} / ${total}`, pct);
-    onProgress(data);
-
-    if (data.status === 'done') return data;
+// ── watermark a list without touching the main progress UI ──
+async function _watermarkItems(items, wmSettings) {
+  const WM_BATCH = 4;   // concurrent Canvas threads
+  for (let i = 0; i < items.length; i += WM_BATCH) {
+    if (S.cancelFlag) break;
+    await Promise.all(
+      items.slice(i, i + WM_BATCH).map(item => applyWatermarkToItem(item, wmSettings))
+    );
+    updateStats();
   }
 }
 
-// ── main upload function ──────────────────────────
+// ── send one batch to server, return job_id ──────
+async function _sendBatch(fd) {
+  const r = await fetch(`${_base()}/api/drive/upload`, {
+    method: 'POST', body: fd,
+    signal: AbortSignal.timeout(60000),
+  });
+  if (!r.ok) {
+    const err = await r.json().catch(() => ({}));
+    throw new Error(err.detail || `HTTP ${r.status}`);
+  }
+  return r.json();   // { job_id, queued }
+}
+
+// ── MAIN PIPELINE ────────────────────────────────
 async function uploadToDrive() {
   const folderUrl = ($('driveUploadFolderUrl').value || '').trim();
   if (!folderUrl) { showNotif('warning', 'ใส่ URL โฟลเดอร์ปลายทางก่อน'); return; }
 
   const folderId = parseFolderId(folderUrl);
-  if (!folderId) {
-    showNotif('error', 'URL โฟลเดอร์ไม่ถูกต้อง — ต้องเป็น drive.google.com/drive/folders/…');
-    return;
-  }
-  if (!S.images.length) { showNotif('warning', 'ไม่มีรูปภาพ'); return; }
+  if (!folderId) { showNotif('error', 'URL โฟลเดอร์ไม่ถูกต้อง'); return; }
+  if (!S.images.length) { showNotif('warning', 'ไม่มีรูปภาพ — นำเข้าก่อน'); return; }
 
-  // ── Step 1: process watermarks (browser-side) ────
-  const notDone = S.images.filter(i => !i.resultBlob);
-  if (notDone.length) {
-    showNotif('info', `กำลังใส่ลายน้ำ ${notDone.length} รูปก่อนอัพโหลด…`);
-    await processImages(notDone);
-    updateStats();
-  }
-  const readyItems = S.images.filter(i => i.resultBlob);
-  if (!readyItems.length) { showNotif('error', 'ไม่มีรูปที่ประมวลผลเสร็จ'); return; }
-
-  const btn   = $('downloadBtn');
-  btn.disabled = true;
-  $('uploadLog').innerHTML = '';
+  S.cancelFlag  = false;
+  const btn     = $('downloadBtn');
+  btn.disabled  = true;
+  $('cancelBtn').style.display = '';
+  $('uploadLog').innerHTML     = '';
   $('uploadLog').style.display = '';
 
-  const total = readyItems.length;
-  const s     = captureSettings();
-  const ext   = s.format === 'jpeg' ? 'jpg' : s.format;
-  // Send 5 files per request → keeps each request small (~5–25 MB)
-  const BATCH = 5;
+  const s          = captureSettings();
+  const ext        = s.format === 'jpeg' ? 'jpg' : s.format;
+  const total      = S.images.length;
+  const numChunks  = Math.ceil(total / CHUNK_SIZE);
+  let totalSent = 0, totalFailed = 0;
 
-  _uploadUI('กำลังส่งไฟล์ไปยัง server…', `0 / ${total}`, 0);
-  ulog(`📤 ส่ง ${total} รูป → server (ทีละ ${BATCH} ไฟล์)`, 'load');
+  _uploadUI('เริ่มต้น…', `0 / ${total}`, 0);
+  ulog(`📋 ${total} รูป แบ่ง ${numChunks} ชุด × ${CHUNK_SIZE} — ใส่ลายน้ำ+ส่ง Drive ทีละชุด`, 'load');
 
-  let sentOk = 0, jobIds = [];
+  for (let ci = 0; ci < numChunks; ci++) {
+    if (S.cancelFlag) { ulog('⛔ ยกเลิกแล้ว', 'warn'); break; }
 
-  // ── Step 2: send all batches to server (quick POST, returns job_id) ──
-  for (let i = 0; i < readyItems.length; i += BATCH) {
-    const batch = readyItems.slice(i, i + BATCH);
-    const fd    = new FormData();
-    fd.append('folder_id', folderId);
-    batch.forEach((item, bi) => {
-      const baseName = s.keepFilename
-        ? item.name.replace(/\.[^.]+$/, '')
-        : `img_${String(i + bi + 1).padStart(5, '0')}`;
-      fd.append('images', item.resultBlob, s.prefix + baseName + '.' + ext);
-    });
+    const start  = ci * CHUNK_SIZE;
+    const chunk  = S.images.slice(start, start + CHUNK_SIZE);
+    const cLabel = `ชุด ${ci + 1}/${numChunks}`;
 
-    try {
-      const r = await fetch(`${_base()}/api/drive/upload`, {
-        method: 'POST', body: fd,
-        signal: AbortSignal.timeout(60000),
-      });
-      if (!r.ok) {
-        const err = await r.json().catch(() => ({}));
-        throw new Error(err.detail || `HTTP ${r.status}`);
-      }
-      const { job_id, queued } = await r.json();
-      jobIds.push(job_id);
-      sentOk += queued;
-      _saveJob(job_id, { folderId, queued, sentAt: Date.now() });
-      ulog(`📬 batch ${jobIds.length}: ${queued} ไฟล์ → job ${job_id}`, 'load');
-    } catch (e) {
-      ulog(`❌ batch ${Math.floor(i/BATCH)+1} ส่งไม่ได้: ${e.message}`, 'err');
+    // ── A: Watermark ──────────────────────────────
+    const toMark = chunk.filter(i => !i.resultBlob);
+    if (toMark.length) {
+      _uploadUI(`${cLabel}: ใส่ลายน้ำ ${toMark.length} รูป…`,
+                `${start} / ${total}`, Math.round(start / total * 100));
+      ulog(`${cLabel}: ใส่ลายน้ำ ${toMark.length} รูป (4 พร้อมกัน)…`, 'load');
+      await _watermarkItems(toMark, s);
+      if (S.cancelFlag) break;
     }
 
-    // Small delay so server isn't flooded with simultaneous POSTs
-    await sleep(300);
-    const sent = Math.min(i + BATCH, total);
-    _uploadUI(`ส่งไปแล้ว ${sent} / ${total}…`, `${sent} / ${total}`,
-              Math.round(sent / total * 30)); // first 30% = submission phase
+    // ── B: Upload to server (UP_BATCH per POST) ───
+    const ready = chunk.filter(i => i.resultBlob);
+    if (ready.length) {
+      ulog(`${cLabel}: ส่ง ${ready.length} รูป → server…`, 'load');
+      for (let bi = 0; bi < ready.length; bi += UP_BATCH) {
+        if (S.cancelFlag) break;
+
+        const batch = ready.slice(bi, bi + UP_BATCH);
+        const fd    = new FormData();
+        fd.append('folder_id', folderId);
+        batch.forEach((item, idx) => {
+          const base = s.keepFilename
+            ? item.name.replace(/\.[^.]+$/, '')
+            : `img_${String(start + bi + idx + 1).padStart(5, '0')}`;
+          fd.append('images', item.resultBlob, s.prefix + base + '.' + ext);
+        });
+
+        try {
+          const { job_id, queued } = await _sendBatch(fd);
+          totalSent += queued;
+          _saveJob(job_id, { folderId, queued, sentAt: Date.now() });
+        } catch (e) {
+          totalFailed += batch.length;
+          ulog(`❌ ${cLabel} batch ${Math.ceil(bi/UP_BATCH)+1}: ${e.message}`, 'err');
+        }
+
+        const done = Math.min(start + bi + UP_BATCH, total);
+        _uploadUI(`${cLabel}: อัพโหลด…`, `${done} / ${total}`,
+                  Math.round(done / total * 100));
+      }
+    }
+
+    // ── C: Free memory for this chunk ────────────
+    chunk.forEach(item => { item.resultBlob = null; item.img = null; });
+    await sleep(50);  // let GC run before next chunk
+
+    const overallDone = Math.min((ci + 1) * CHUNK_SIZE, total);
+    ulog(`✅ ${cLabel}: ส่งแล้วรวม ${totalSent} รูป`, 'ok');
+    _uploadUI(`${cLabel} เสร็จ`, `${overallDone} / ${total}`,
+              Math.round(overallDone / total * 100));
   }
 
-  if (!jobIds.length) {
-    showNotif('error', 'ส่งไฟล์ไม่ได้เลย — ตรวจสอบ backend');
-    btn.disabled = false;
-    return;
-  }
-
-  showNotif('info', `☁️ Server รับไฟล์แล้ว ${sentOk} รูป — กำลัง upload ไป Drive ใน background…`);
-  ulog(`✅ Server รับครบ — ปิดหน้านี้ได้ server จะทำต่อเอง`, 'ok');
-  ulog(`📋 Job IDs: ${jobIds.join(', ')}`, 'load');
-
-  // ── Step 3: poll all jobs concurrently ──────────
-  let totalUploaded = 0, totalErrors = 0;
-
-  await Promise.all(jobIds.map(jobId =>
-    _pollJob(jobId, sentOk / jobIds.length, (data) => {
-      // aggregate across all jobs for the progress bar (approximate)
-      const allJobs = jobIds.map(id => _UPLOAD_JOBS_CACHE[id] || data);
-      const totalDone = allJobs.reduce((s, j) => s + (j.uploaded||0) + (j.errors||0), 0);
-      const pct = 30 + Math.round(totalDone / total * 70); // 30–100%
-      _uploadUI(null, `${totalDone} / ${total}`, Math.min(pct, 99));
-    }).then(result => {
-      totalUploaded += result.uploaded || 0;
-      totalErrors   += result.errors   || 0;
-      _removeJob(jobId);
-    }).catch(() => {})
-  ));
-
+  // ── Done ─────────────────────────────────────────
   btn.disabled = false;
-  _uploadUI(
-    totalUploaded > 0 ? `✅ เสร็จ: ${totalUploaded} รูป` : '❌ ล้มเหลวทั้งหมด',
-    `${totalUploaded} / ${total}`, 100
-  );
+  $('cancelBtn').style.display = 'none';
+  updateStats();
 
-  if (totalUploaded > 0) showNotif('success', `☁️ อัพโหลด ${totalUploaded} รูปไป Google Drive เรียบร้อย`);
-  if (totalErrors   > 0) showNotif('warning',  `⚠️ อัพโหลดไม่ได้ ${totalErrors} รูป`);
+  const label = S.cancelFlag
+    ? `⛔ หยุดแล้ว — ส่งไป ${totalSent} รูป`
+    : totalSent > 0 ? `✅ ส่งครบ ${totalSent} รูป — server กำลัง upload Drive` : '❌ ล้มเหลว';
+  _uploadUI(label, `${totalSent} / ${total}`, 100);
+
+  if (totalSent   > 0) showNotif('success',
+    `☁️ ส่ง ${totalSent} รูปให้ server เรียบร้อย — กำลัง upload ไป Drive ใน background`);
+  if (totalFailed > 0) showNotif('warning', `⚠️ ${totalFailed} รูปส่งไม่ได้`);
 }
 
-// cache for aggregated polling (not critical, just for progress bar)
-const _UPLOAD_JOBS_CACHE = {};
-
-// ── Resume-job panel: check pending jobs after reopening tab ─
+// ── check pending jobs on tab reopen ─────────────
 async function checkPendingJobs() {
   const jobs = _loadJobs();
   const ids  = Object.keys(jobs);
   if (!ids.length) return;
-
-  ulog(`🔄 พบ ${ids.length} job ที่ยังไม่เสร็จ — กำลังตรวจสอบสถานะ…`, 'load');
+  ulog(`🔄 พบ ${ids.length} job ที่ค้างอยู่ — กำลังตรวจสอบ…`, 'load');
   $('uploadProgRow').style.display = '';
   $('uploadLog').style.display     = '';
-
-  for (const jobId of ids) {
+  for (const id of ids) {
     try {
-      const r = await fetch(`${_base()}/api/drive/job/${jobId}`,
+      const r = await fetch(`${_base()}/api/drive/job/${id}`,
         { signal: AbortSignal.timeout(8000) });
-      if (r.status === 404) {
-        ulog(`Job ${jobId}: server ไม่พบ (อาจ restart แล้ว)`, 'warn');
-        _removeJob(jobId);
-        continue;
-      }
-      const data = await r.json();
-      if (data.status === 'done') {
-        ulog(`Job ${jobId}: เสร็จแล้ว — อัพโหลด ${data.uploaded} รูป`, 'ok');
-        _removeJob(jobId);
-      } else {
-        ulog(`Job ${jobId}: ${data.status} — ${data.uploaded}/${data.total} รูป`, 'load');
-      }
-    } catch {
-      ulog(`Job ${jobId}: ติดต่อ server ไม่ได้`, 'warn');
-    }
+      if (r.status === 404) { ulog(`Job ${id}: server restart แล้ว`, 'warn'); _removeJob(id); continue; }
+      const d = await r.json();
+      if (d.status === 'done') { ulog(`Job ${id}: เสร็จ — ${d.uploaded} รูป`, 'ok'); _removeJob(id); }
+      else ulog(`Job ${id}: ${d.status} — ${d.uploaded}/${d.total}`, 'load');
+    } catch { ulog(`Job ${id}: ติดต่อ server ไม่ได้`, 'warn'); }
   }
 }
 
