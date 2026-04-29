@@ -24,6 +24,7 @@ Endpoints:
 """
 
 import io
+import json
 import math
 import os
 import zipfile
@@ -708,6 +709,85 @@ async def watermark_batch(
             "X-Errors": str(len(errors)),
         },
     )
+
+
+# ─────────────────────────────────────────────────────────────
+# Google Drive Upload helpers
+# ─────────────────────────────────────────────────────────────
+_UPLOAD_MIME = {
+    "jpg": "image/jpeg", "jpeg": "image/jpeg",
+    "png": "image/png",  "webp": "image/webp",
+    "gif": "image/gif",  "bmp":  "image/bmp",
+    "tif": "image/tiff", "tiff": "image/tiff",
+}
+
+async def drive_upload_file(
+    client: httpx.AsyncClient,
+    token: str,
+    folder_id: str,
+    filename: str,
+    content: bytes,
+    mime_type: str = "image/jpeg",
+) -> dict:
+    """Upload one file to a Drive folder using multipart upload."""
+    boundary = "wmpr0_mp_boundary"
+    metadata = json.dumps({"name": filename, "parents": [folder_id]})
+    body = (
+        f"--{boundary}\r\n"
+        "Content-Type: application/json; charset=UTF-8\r\n\r\n"
+        f"{metadata}\r\n"
+        f"--{boundary}\r\n"
+        f"Content-Type: {mime_type}\r\n\r\n"
+    ).encode("utf-8") + content + f"\r\n--{boundary}--".encode("utf-8")
+
+    r = await client.post(
+        "https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart",
+        headers={
+            "Authorization": f"Bearer {token}",
+            "Content-Type": f"multipart/related; boundary={boundary}",
+        },
+        content=body,
+        timeout=120,
+    )
+    if r.status_code not in (200, 201):
+        raise ValueError(f"HTTP {r.status_code}: {r.text[:300]}")
+    return r.json()   # contains 'id', 'name', 'mimeType', …
+
+
+@app.post("/api/drive/upload")
+async def upload_to_drive(
+    folder_id: str = Form(...),
+    images: List[UploadFile] = File(...),
+):
+    """
+    Upload watermarked images to a specific Google Drive folder.
+    Client sends folder_id + image files; server authenticates via OAuth
+    and uploads directly to Drive — credentials never leave the server.
+    """
+    results, errors = [], []
+    async with httpx.AsyncClient() as client:
+        token = await _get_access_token(client)
+        for upload in images:
+            try:
+                content = await upload.read()
+                ext      = (upload.filename or "img.jpg").rsplit(".", 1)[-1].lower()
+                mime     = _UPLOAD_MIME.get(ext, "image/jpeg")
+                name     = upload.filename or f"image.{ext}"
+                info     = await drive_upload_file(client, token, folder_id, name, content, mime)
+                results.append({
+                    "name": info.get("name"),
+                    "id":   info.get("id"),
+                    "url":  f"https://drive.google.com/file/d/{info.get('id')}/view",
+                })
+            except Exception as e:
+                errors.append({"file": upload.filename, "error": str(e)})
+
+    return {
+        "uploaded":   len(results),
+        "errors":     len(errors),
+        "files":      results,
+        "error_list": errors,
+    }
 
 
 # ─────────────────────────────────────────────────────────────

@@ -974,6 +974,25 @@ input[type=color] { width: 40px; height: 34px; border: 1px solid var(--border); 
         <b style="color:var(--warning)">⚡ ประสิทธิภาพสูง</b><br>
         ประมวลผลแบบ batch — รองรับ 10,000+ รูปโดยไม่ค้าง
       </div>
+
+      <!-- ─── UPLOAD TO GOOGLE DRIVE ──────────────── -->
+      <div class="section" style="margin-top:16px">
+        <div class="section-title">☁️ อัพโหลดไป Google Drive</div>
+        <label>URL โฟลเดอร์ปลายทาง</label>
+        <input type="text" id="driveUploadFolderUrl"
+          placeholder="https://drive.google.com/drive/folders/…"
+          style="margin-bottom:8px">
+        <div class="progress-label" id="uploadProgRow" style="display:none">
+          <span id="uploadLabel">กำลังอัพโหลด…</span>
+          <span id="uploadCount">0 / 0</span>
+        </div>
+        <div class="progress-bar" id="uploadProgBar" style="display:none;margin-top:3px">
+          <div class="progress-fill" id="uploadBar" style="width:0%"></div>
+        </div>
+        <div id="uploadLog" class="gdrive-log" style="display:none;margin-top:6px"></div>
+        <button class="btn btn-primary btn-full" style="margin-top:8px"
+          onclick="uploadToDrive()" id="uploadDriveBtn">☁️ อัพโหลดไป Drive</button>
+      </div>
     </div>
   </aside>
 
@@ -2280,6 +2299,113 @@ async function importGdriveFolder() {
 function cancelFolderImport() {
   GD.cancelFlag = true;
   flog('cancel', 'warn', '⚠', 'กำลังหยุด…');
+}
+
+// ═══════════════════════════════════════════════════
+// GOOGLE DRIVE UPLOAD
+// ═══════════════════════════════════════════════════
+
+function ulog(text, type = 'info') {
+  const log = $('uploadLog');
+  if (!log) return;
+  log.style.display = '';
+  const el = document.createElement('div');
+  el.className = `glog-row glog-${type}`;
+  const icon = { ok: '✓', err: '✗', load: '⟳', warn: '⚠' }[type] || '•';
+  el.innerHTML = `<span class="glog-icon">${icon}</span><span class="glog-text">${text}</span>`;
+  log.appendChild(el);
+  log.scrollTop = log.scrollHeight;
+}
+
+async function uploadToDrive() {
+  const folderUrl = ($('driveUploadFolderUrl').value || '').trim();
+  if (!folderUrl) { showNotif('warning', 'ใส่ URL โฟลเดอร์ปลายทางก่อน'); return; }
+
+  const folderId = parseFolderId(folderUrl);
+  if (!folderId) {
+    showNotif('error', 'URL โฟลเดอร์ไม่ถูกต้อง — ต้องเป็น drive.google.com/drive/folders/…');
+    return;
+  }
+
+  if (!S.images.length) { showNotif('warning', 'ไม่มีรูปภาพ'); return; }
+
+  // Process any images that don't have a watermarked result yet
+  const notDone = S.images.filter(i => !i.resultBlob);
+  if (notDone.length) {
+    showNotif('info', `กำลังประมวลผล ${notDone.length} รูปก่อนอัพโหลด…`);
+    await processImages(notDone);
+    updateStats();
+  }
+
+  const readyItems = S.images.filter(i => i.resultBlob);
+  if (!readyItems.length) { showNotif('error', 'ไม่มีรูปที่ประมวลผลเสร็จ'); return; }
+
+  const btn = $('uploadDriveBtn');
+  btn.disabled = true;
+
+  // Reset log & progress
+  $('uploadLog').innerHTML = '';
+  $('uploadLog').style.display = '';
+  $('uploadProgRow').style.display = '';
+  $('uploadProgBar').style.display = '';
+
+  const total = readyItems.length;
+  let uploaded = 0, failed = 0;
+
+  $('uploadCount').textContent = `0 / ${total}`;
+  $('uploadLabel').textContent  = 'กำลังอัพโหลด…';
+  $('uploadBar').style.width    = '0%';
+
+  ulog(`📂 ${total} รูป → โฟลเดอร์ Drive`, 'load');
+
+  const s   = captureSettings();
+  const ext = s.format === 'jpeg' ? 'jpg' : s.format;
+  const BATCH = 10;  // files per request
+
+  for (let i = 0; i < readyItems.length; i += BATCH) {
+    const batch = readyItems.slice(i, i + BATCH);
+    const fd    = new FormData();
+    fd.append('folder_id', folderId);
+
+    batch.forEach((item, bi) => {
+      const baseName = s.keepFilename
+        ? item.name.replace(/\.[^.]+$/, '')
+        : `img_${String(i + bi + 1).padStart(5, '0')}`;
+      const fname = s.prefix + baseName + '.' + ext;
+      fd.append('images', item.resultBlob, fname);
+    });
+
+    try {
+      const r = await fetch(`${_base()}/api/drive/upload`, {
+        method: 'POST', body: fd,
+        signal: AbortSignal.timeout(120000),
+      });
+      if (!r.ok) {
+        const err = await r.json().catch(() => ({}));
+        throw new Error(err.detail || `HTTP ${r.status}`);
+      }
+      const data = await r.json();
+      uploaded += data.uploaded   || 0;
+      failed   += data.errors     || 0;
+      (data.files      || []).forEach(f => ulog(`${f.name}`, 'ok'));
+      (data.error_list || []).forEach(e => ulog(`${e.file}: ${e.error}`, 'err'));
+    } catch (err) {
+      failed += batch.length;
+      ulog(`Batch ${Math.floor(i / BATCH) + 1} ล้มเหลว: ${err.message}`, 'err');
+    }
+
+    const done = Math.min(i + BATCH, total);
+    $('uploadBar').style.width    = Math.round(done / total * 100) + '%';
+    $('uploadCount').textContent  = `${done} / ${total}`;
+    $('uploadLabel').textContent  = `อัพโหลดแล้ว ${uploaded} รูป…`;
+  }
+
+  btn.disabled = false;
+  $('uploadLabel').textContent = uploaded > 0 ? `✅ เสร็จ: ${uploaded} รูป` : '❌ ล้มเหลวทั้งหมด';
+  $('uploadBar').style.width   = '100%';
+
+  if (uploaded > 0) showNotif('success', `☁️ อัพโหลด ${uploaded} รูปไป Google Drive เรียบร้อย`);
+  if (failed   > 0) showNotif('warning', `⚠️ อัพโหลดไม่ได้ ${failed} รูป`);
 }
 
 // ─── INIT ────────────────────────────────────────
