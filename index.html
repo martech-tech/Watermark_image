@@ -2312,7 +2312,7 @@ async function importGdriveFolder() {
   }
   _setProgress('กำลังนำเข้า…', `0 / ${total}`, 0);
 
-  // ── helper: download + add one file ───────────────
+  // ── helper: download + add one file ─────────────
   async function _importOne(f) {
     try {
       const { blob, ext } = await fetchGdriveImage(f.id);
@@ -2330,36 +2330,43 @@ async function importGdriveFolder() {
     }
   }
 
-  // ── Round 0: main pass (sequential — 1 file at a time) ──
+  // ── Round 0: main pass — concurrent BATCH=5 ─────
+  const BATCH = 5;
   let failedFiles = [];
-  for (let i = 0; i < allFiles.length; i++) {
+  let processed = 0;
+
+  for (let i = 0; i < allFiles.length; i += BATCH) {
     if (GD.cancelFlag) break;
-    const f = allFiles[i];
-    const success = await _importOne(f);
-    if (!success) { fail++; failedFiles.push(f); }
-    _setProgress(`นำเข้าแล้ว ${ok} รูป…`, `${i + 1} / ${total}`,
-                 Math.round((i + 1) / total * 100));
+    const batch = allFiles.slice(i, i + BATCH);
+
+    // ดาวน์โหลด 5 ไฟล์พร้อมกัน เร็วกว่า sequential 5×
+    const results = await Promise.allSettled(batch.map(f => _importOne(f)));
+    results.forEach((r, idx) => {
+      if (r.status === 'rejected' || r.value === false) {
+        fail++;
+        failedFiles.push(batch[idx]);
+      }
+    });
+
+    processed = Math.min(i + BATCH, total);
+    _setProgress(`นำเข้าแล้ว ${ok} รูป…`, `${processed} / ${total}`,
+                 Math.round(processed / total * 100));
   }
 
-  // ── Rounds 1–2: retry failed files ────────────────
+  // ── Rounds 1–2: retry failed files (sequential — ไม่แย่งกัน) ──
   for (let round = 1; round <= 2 && failedFiles.length > 0 && !GD.cancelFlag; round++) {
     const toRetry = [...failedFiles];
     failedFiles = [];
     flog(`retry-${round}`, 'warn', '⚠',
-         `🔄 รอบที่ ${round}: ลองใหม่ ${toRetry.length} ไฟล์ที่ล้มเหลว…`);
+         `🔄 รอบที่ ${round}: ลองใหม่ ${toRetry.length} ไฟล์…`);
     _setProgress(`ลองใหม่รอบที่ ${round}…`, `${toRetry.length} ไฟล์`, 0);
-    await sleep(2000 * round);   // wait longer before each retry
+    await sleep(1500 * round);
 
     for (let i = 0; i < toRetry.length; i++) {
       if (GD.cancelFlag) break;
-      const f       = toRetry[i];
-      const success = await _importOne(f);
-      if (!success) {
-        failedFiles.push(f);
-      } else {
-        fail--;   // downgrade from fail to ok
-      }
-      _setProgress(`ลองใหม่รอบที่ ${round}: ${i + 1} / ${toRetry.length}`,
+      const success = await _importOne(toRetry[i]);
+      if (!success) failedFiles.push(toRetry[i]); else fail--;
+      _setProgress(`retry รอบ ${round}: ${i + 1}/${toRetry.length}`,
                    `${i + 1} / ${toRetry.length}`,
                    Math.round((i + 1) / toRetry.length * 100));
     }
