@@ -2514,17 +2514,34 @@ async function _watermarkItems(items, wmSettings) {
   }
 }
 
-// ── send one batch to server, return job_id ──────
-async function _sendBatch(fd) {
-  const r = await fetch(`${_base()}/api/drive/upload`, {
+// ── ask backend for resumable-upload URIs (no file data sent) ──
+async function _getUploadUris(folderId, filesInfo) {
+  const fd = new FormData();
+  fd.append('folder_id', folderId);
+  fd.append('files_json', JSON.stringify(filesInfo));
+  const r = await fetch(`${_base()}/api/drive/init-uploads`, {
     method: 'POST', body: fd,
-    signal: AbortSignal.timeout(60000),
+    signal: AbortSignal.timeout(30000),
   });
   if (!r.ok) {
     const err = await r.json().catch(() => ({}));
     throw new Error(err.detail || `HTTP ${r.status}`);
   }
-  return r.json();   // { job_id, queued }
+  const { sessions } = await r.json();
+  return sessions;   // [{name, ok, uri}, ...]
+}
+
+// ── browser PUT file directly to Google Drive resumable URI ──
+async function _putToDrive(uri, blob) {
+  const r = await fetch(uri, {
+    method: 'PUT',
+    headers: { 'Content-Type': blob.type || 'image/jpeg' },
+    body: blob,
+    signal: AbortSignal.timeout(180000),  // 3 min per file
+  });
+  if (r.ok) return r.json().catch(() => ({}));
+  const txt = await r.text().catch(() => '');
+  throw new Error(`HTTP ${r.status}${txt ? ': ' + txt.slice(0, 120) : ''}`);
 }
 
 // ── MAIN PIPELINE ────────────────────────────────
@@ -2569,35 +2586,57 @@ async function uploadToDrive() {
       if (S.cancelFlag) break;
     }
 
-    // ── B: Upload to server (UP_BATCH per POST) ───
+    // ── B: Direct browser → Google Drive upload ──────────────────
+    // Step 1: ask backend for resumable-upload URIs (only file names+mimes,
+    //         no image data goes through the server → no Vercel size limit)
+    // Step 2: browser PUT each blob directly to Google Drive
     const ready = chunk.filter(i => i.resultBlob);
     if (ready.length) {
-      ulog(`${cLabel}: ส่ง ${ready.length} รูป → server…`, 'load');
-      for (let bi = 0; bi < ready.length; bi += UP_BATCH) {
-        if (S.cancelFlag) break;
+      ulog(`${cLabel}: ขอ upload URIs สำหรับ ${ready.length} รูป…`, 'load');
 
-        const batch = ready.slice(bi, bi + UP_BATCH);
-        const fd    = new FormData();
-        fd.append('folder_id', folderId);
-        batch.forEach((item, idx) => {
-          const base = s.keepFilename
-            ? item.name.replace(/\.[^.]+$/, '')
-            : `img_${String(start + bi + idx + 1).padStart(5, '0')}`;
-          fd.append('images', item.resultBlob, s.prefix + base + '.' + ext);
-        });
+      const filesInfo = ready.map((item, idx) => {
+        const base = s.keepFilename
+          ? item.name.replace(/\.[^.]+$/, '')
+          : `img_${String(start + idx + 1).padStart(5, '0')}`;
+        return {
+          name: s.prefix + base + '.' + ext,
+          mime: item.resultBlob.type || 'image/jpeg',
+        };
+      });
 
-        try {
-          const { job_id, queued } = await _sendBatch(fd);
-          totalSent += queued;
-          _saveJob(job_id, { folderId, queued, sentAt: Date.now() });
-        } catch (e) {
-          totalFailed += batch.length;
-          ulog(`❌ ${cLabel} batch ${Math.ceil(bi/UP_BATCH)+1}: ${e.message}`, 'err');
+      let sessions = null;
+      try {
+        sessions = await _getUploadUris(folderId, filesInfo);
+      } catch (e) {
+        ulog(`❌ ${cLabel}: ขอ URI ล้มเหลว — ${e.message}`, 'err');
+        totalFailed += ready.length;
+      }
+
+      if (sessions) {
+        // Upload 3 files concurrently directly to Drive
+        const DIRECT_BATCH = 3;
+        for (let bi = 0; bi < sessions.length; bi += DIRECT_BATCH) {
+          if (S.cancelFlag) break;
+          const slice = sessions.slice(bi, bi + DIRECT_BATCH);
+          const results = await Promise.allSettled(
+            slice.map((sess, j) => {
+              if (!sess.ok) return Promise.reject(new Error(sess.error || 'URI ไม่ถูกต้อง'));
+              return _putToDrive(sess.uri, ready[bi + j].resultBlob);
+            })
+          );
+          results.forEach((r, j) => {
+            if (r.status === 'fulfilled') {
+              totalSent++;
+              ulog(`✅ ${slice[j].name}`, 'ok');
+            } else {
+              totalFailed++;
+              ulog(`❌ ${slice[j].name}: ${r.reason?.message || r.reason}`, 'err');
+            }
+          });
+          const done = Math.min(start + bi + DIRECT_BATCH, total);
+          _uploadUI(`${cLabel}: อัพโหลด Drive…`, `${done} / ${total}`,
+                    Math.round(done / total * 100));
         }
-
-        const done = Math.min(start + bi + UP_BATCH, total);
-        _uploadUI(`${cLabel}: อัพโหลด…`, `${done} / ${total}`,
-                  Math.round(done / total * 100));
       }
     }
 
@@ -2617,13 +2656,13 @@ async function uploadToDrive() {
   updateStats();
 
   const label = S.cancelFlag
-    ? `⛔ หยุดแล้ว — ส่งไป ${totalSent} รูป`
-    : totalSent > 0 ? `✅ ส่งครบ ${totalSent} รูป — server กำลัง upload Drive` : '❌ ล้มเหลว';
+    ? `⛔ หยุดแล้ว — อัพโหลดแล้ว ${totalSent} รูป`
+    : totalSent > 0 ? `✅ อัพโหลดตรง Drive ครบ ${totalSent} รูป` : '❌ ล้มเหลว';
   _uploadUI(label, `${totalSent} / ${total}`, 100);
 
   if (totalSent   > 0) showNotif('success',
-    `☁️ ส่ง ${totalSent} รูปให้ server เรียบร้อย — กำลัง upload ไป Drive ใน background`);
-  if (totalFailed > 0) showNotif('warning', `⚠️ ${totalFailed} รูปส่งไม่ได้`);
+    `☁️ อัพโหลด ${totalSent} รูป → Google Drive ตรงจากเบราว์เซอร์ เสร็จแล้ว!`);
+  if (totalFailed > 0) showNotif('warning', `⚠️ ${totalFailed} รูปอัพโหลดไม่สำเร็จ`);
 }
 
 // ── check pending jobs on tab reopen ─────────────

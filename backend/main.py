@@ -937,6 +937,79 @@ async def get_upload_job(job_id: str):
     return job
 
 
+@app.post("/api/drive/init-uploads")
+async def init_resumable_uploads(
+    folder_id: str = Form(...),
+    files_json: str = Form(..., description="JSON array: [{name, mime}, …] max 100 items"),
+):
+    """
+    Create Google Drive resumable upload sessions — one per file.
+
+    Returns a short-lived upload URI for each file.  The browser then
+    PUT-uploads files *directly* to Google Drive using these URIs.
+    No file data ever passes through this server, so Vercel's body-size
+    limit is irrelevant and every file can be any size (up to 5 TB).
+
+    Each URI embeds session credentials; no Authorization header is
+    needed when the browser performs the PUT.  URIs expire after 1 week
+    or immediately after a successful upload.
+    """
+    try:
+        files_info: list = json.loads(files_json)
+    except Exception:
+        raise HTTPException(400, "files_json ไม่ใช่ JSON ที่ถูกต้อง")
+    if not isinstance(files_info, list) or not files_info:
+        raise HTTPException(400, "files_json ต้องเป็น array ที่ไม่ว่าง")
+    if len(files_info) > 100:
+        raise HTTPException(400, "ส่งได้สูงสุด 100 ไฟล์ต่อ request")
+
+    # 10 concurrent session-initiations (tiny payloads, very fast)
+    sem = asyncio.Semaphore(10)
+
+    async with httpx.AsyncClient(
+        limits=httpx.Limits(max_connections=12, max_keepalive_connections=10),
+    ) as client:
+        token = await _get_access_token(client)
+
+        async def _init_one(info: dict) -> dict:
+            name = (info.get("name") or "image.jpg").strip()
+            mime = (info.get("mime") or "image/jpeg").strip()
+            async with sem:
+                try:
+                    r = await client.post(
+                        "https://www.googleapis.com/upload/drive/v3/files"
+                        "?uploadType=resumable",
+                        headers={
+                            "Authorization":         f"Bearer {token}",
+                            "Content-Type":          "application/json; charset=UTF-8",
+                            "X-Upload-Content-Type": mime,
+                        },
+                        content=json.dumps(
+                            {"name": name, "parents": [folder_id]}
+                        ).encode(),
+                        timeout=15,
+                    )
+                    if r.status_code not in (200, 201):
+                        return {
+                            "name": name, "ok": False,
+                            "error": f"HTTP {r.status_code}: {r.text[:200]}",
+                        }
+                    # Google returns the session URI in the Location header
+                    uri = r.headers.get("location") or r.headers.get("Location", "")
+                    if not uri:
+                        return {"name": name, "ok": False,
+                                "error": "ไม่ได้รับ Location header จาก Google"}
+                    return {"name": name, "ok": True, "uri": uri}
+                except Exception as exc:
+                    return {"name": name, "ok": False, "error": str(exc)}
+
+        sessions = await asyncio.gather(*[_init_one(fi) for fi in files_info])
+
+    ok_count  = sum(1 for s in sessions if s.get("ok"))
+    err_count = len(sessions) - ok_count
+    return {"sessions": list(sessions), "ok": ok_count, "errors": err_count}
+
+
 # ─────────────────────────────────────────────────────────────
 # Serve frontend (index.html) — must be last
 # ─────────────────────────────────────────────────────────────
