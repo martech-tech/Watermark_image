@@ -58,7 +58,7 @@ GOOGLE_CLIENT_SECRET = os.getenv("GOOGLE_CLIENT_SECRET", "")
 GOOGLE_REFRESH_TOKEN = os.getenv("GOOGLE_REFRESH_TOKEN", "")
 ALLOWED_ORIGINS      = os.getenv("ALLOWED_ORIGINS", "*").split(",")
 DRIVE_API_BASE       = "https://www.googleapis.com/drive/v3"
-DRIVE_DL_TIMEOUT     = 30    # seconds per file
+DRIVE_DL_TIMEOUT     = int(os.getenv("DRIVE_DL_TIMEOUT",  "30"))   # seconds per file
 DRIVE_LIST_PAGE      = 1000  # files per API page
 
 _DRIVE_CONFIGURED = bool(GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET and GOOGLE_REFRESH_TOKEN)
@@ -809,8 +809,9 @@ _UPLOAD_MIME = {
 # Structure:  job_id → { status, total, uploaded, errors, files, error_list, created_at }
 _UPLOAD_JOBS: dict[str, dict] = {}
 
-# Max concurrent Drive API calls per background job (keeps memory + rate-limit low)
-_DRIVE_SEM_LIMIT = 2
+# Max concurrent Drive API calls per background job
+# Local: set DRIVE_SEM_LIMIT=6 in .env for higher throughput
+_DRIVE_SEM_LIMIT = int(os.getenv("DRIVE_SEM_LIMIT", "2"))
 
 
 async def drive_upload_file(

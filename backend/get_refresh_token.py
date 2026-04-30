@@ -42,7 +42,12 @@ if not CLIENT_SECRET:
     CLIENT_SECRET = input("👉 วาง GOOGLE_CLIENT_SECRET : ").strip()
 
 REDIRECT_URI = "http://localhost:8080"
-SCOPE        = "https://www.googleapis.com/auth/drive.readonly"
+# drive.readonly  → อ่านไฟล์ใน Drive (นำเข้ารูป)
+# drive.file      → สร้าง/แก้ไขไฟล์ที่แอพสร้าง (อัพโหลดรูปลายน้ำ)
+SCOPE = (
+    "https://www.googleapis.com/auth/drive.readonly "
+    "https://www.googleapis.com/auth/drive.file"
+)
 
 # ─── สร้าง authorization URL ───────────────────────────────
 auth_url = "https://accounts.google.com/o/oauth2/v2/auth?" + urllib.parse.urlencode({

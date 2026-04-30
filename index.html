@@ -1211,10 +1211,35 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
 // ═══════════════════════════════════════════════════
 // BACKEND CONFIG
 // ═══════════════════════════════════════════════════
-// ถ้า backend รันบน origin เดียวกับ frontend ให้ปล่อย '' ไว้
-// ถ้า backend อยู่คนละ host เช่น http://localhost:8000 ให้ใส่ URL นั้น
+// Auto-detect local vs cloud — ปรับ performance settings อัตโนมัติ
+// ═══════════════════════════════════════════════════
 const BACKEND_URL = '';
 const _base = () => BACKEND_URL;
+
+// Local = รันบนเครื่องตัวเอง → ไม่มี timeout / ไม่มี size limit
+const IS_LOCAL = ['localhost','127.0.0.1','0.0.0.0'].includes(location.hostname);
+
+// ── Import settings ──────────────────────────────────────────
+// Local: ดาวน์โหลด 60 ไฟล์/รอบ (5×12), pop-in เร็วขึ้น
+// Cloud: 24 ไฟล์/รอบ (8×3), stagger ปกติ
+const CFG = IS_LOCAL
+  ? { importBatch: 12, importConc: 5, stagger: 18, chunk: 100, directConc: 5 }
+  : { importBatch:  8, importConc: 3, stagger: 32, chunk:  50, directConc: 3 };
+
+if (IS_LOCAL) {
+  // แสดง badge เล็กๆ ให้รู้ว่ารันแบบ local
+  document.addEventListener('DOMContentLoaded', () => {
+    const h = document.querySelector('header');
+    if (h) {
+      const badge = document.createElement('span');
+      badge.style.cssText =
+        'font-size:.65rem;background:rgba(61,220,132,.15);border:1px solid rgba(61,220,132,.35);'
+        +'color:#3ddc84;border-radius:99px;padding:2px 8px;margin-left:4px;font-weight:700;';
+      badge.textContent = '⚡ Local';
+      h.querySelector('.stat-pills')?.appendChild(badge);
+    }
+  });
+}
 
 // ═══════════════════════════════════════════════════
 // TABS
@@ -2447,10 +2472,10 @@ async function importGdriveFolder() {
   }
 
   // ── 4. Batch fetch helper (unchanged from previous) ──
-  const FILES_PER_REQ = 8;
-  const SUPER = FILES_PER_REQ * 3;   // 24 files per super-batch
+  const FILES_PER_REQ = CFG.importBatch;            // 8 cloud / 12 local
+  const SUPER = FILES_PER_REQ * CFG.importConc;     // 24 cloud / 60 local
 
-  // Returns array of 3 maps: fileId → {blob,mime}|null
+  // Returns array of maps: fileId → {blob,mime}|null
   function _fetchSuperBatch(slice) {
     const batches = [];
     for (let j = 0; j < slice.length; j += FILES_PER_REQ)
@@ -2461,7 +2486,7 @@ async function importGdriveFolder() {
   // ── 5. Double-buffer pipeline ─────────────────────
   //   Download super-batch[i+1] while stagger-adding super-batch[i]
   //   → gallery is always filling; server is always busy
-  const STAGGER_MS = 32;   // ms between each thumb popping in
+  const STAGGER_MS = CFG.stagger;    // 32ms cloud / 18ms local
   let failedFiles  = [];
 
   const _sbFetch = i => i < allFiles.length
@@ -2555,8 +2580,8 @@ function cancelFolderImport() {
 // ข้อดี: RAM คงที่ไม่ว่าจะมีกี่หมื่นรูป, server ไม่โดนกด
 // ───────────────────────────────────────────────────
 
-const CHUNK_SIZE = 50;   // รูปต่อรอบ (watermark+upload+free)
-const UP_BATCH   = 5;    // ไฟล์ต่อ 1 POST ไปยัง server
+const CHUNK_SIZE = CFG.chunk;   // 50 cloud / 100 local (watermark+upload+free)
+const UP_BATCH   = 5;           // ไฟล์ต่อ 1 POST ไปยัง server (legacy)
 
 // ── log helper ───────────────────────────────────
 function ulog(text, type = 'info') {
@@ -2705,8 +2730,8 @@ async function uploadToDrive() {
       }
 
       if (sessions) {
-        // Upload 3 files concurrently directly to Drive
-        const DIRECT_BATCH = 3;
+        // Upload concurrently directly to Drive (3 cloud / 5 local)
+        const DIRECT_BATCH = CFG.directConc;
         for (let bi = 0; bi < sessions.length; bi += DIRECT_BATCH) {
           if (S.cancelFlag) break;
           const slice = sessions.slice(bi, bi + DIRECT_BATCH);
