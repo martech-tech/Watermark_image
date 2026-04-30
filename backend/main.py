@@ -33,6 +33,7 @@ import uuid
 import zipfile
 import asyncio
 import httpx
+from concurrent.futures import ThreadPoolExecutor
 from typing import Optional, List
 from dotenv import load_dotenv
 
@@ -82,6 +83,36 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+# ── HEIC conversion thread pool ──────────────────────────────
+# Pillow HEIC decode is CPU-heavy (~16 MB RAM per 2040×2040 image).
+# Running it in a thread pool keeps the async event loop responsive
+# and caps peak memory to max_workers × ~25 MB instead of N-concurrent × 25 MB.
+_HEIC_POOL = ThreadPoolExecutor(max_workers=3, thread_name_prefix="heic")
+
+
+def _heic_to_jpeg_sync(raw: bytes, quality: int = 88) -> bytes:
+    """Decode HEIC/HEIF → JPEG synchronously (runs inside thread pool)."""
+    img = Image.open(io.BytesIO(raw))
+    buf = io.BytesIO()
+    img.convert("RGB").save(buf, format="JPEG", quality=quality)
+    result = buf.getvalue()
+    img.close()          # release Pillow decoder
+    del img, buf         # help GC
+    return result
+
+
+async def _maybe_convert_heic(content: bytes, content_type: str) -> tuple[bytes, str]:
+    """If content is HEIC/HEIF, convert to JPEG in the thread pool; else pass through."""
+    if content_type not in ("image/heic", "image/heif"):
+        return content, content_type
+    try:
+        loop = asyncio.get_event_loop()
+        jpeg = await loop.run_in_executor(_HEIC_POOL, _heic_to_jpeg_sync, content)
+        return jpeg, "image/jpeg"
+    except Exception:
+        return content, content_type   # serve original; browser shows its own error
 
 
 # ─────────────────────────────────────────────────────────────
@@ -415,16 +446,8 @@ async def proxy_drive_file(file_id: str):
     content_type = r.headers.get("content-type", "image/jpeg").lower().split(";")[0].strip()
     content      = r.content
 
-    # Convert HEIC/HEIF → JPEG so all browsers can display it
-    if content_type in ("image/heic", "image/heif"):
-        try:
-            img = Image.open(io.BytesIO(content))
-            buf = io.BytesIO()
-            img.convert("RGB").save(buf, format="JPEG", quality=92)
-            content      = buf.getvalue()
-            content_type = "image/jpeg"
-        except Exception:
-            pass  # serve original bytes; browser will show its own error
+    # Convert HEIC/HEIF → JPEG (thread-pool, max 3 concurrent conversions)
+    content, content_type = await _maybe_convert_heic(content, content_type)
 
     return Response(content=content, media_type=content_type)
 
@@ -462,16 +485,8 @@ async def proxy_drive_files_batch(
                 content = r.content
                 ct = r.headers.get("content-type", "image/jpeg").split(";")[0].strip()
 
-                # Convert HEIC → JPEG on server so browser doesn't need heic2any
-                if ct in ("image/heic", "image/heif"):
-                    try:
-                        img = Image.open(io.BytesIO(content))
-                        buf = io.BytesIO()
-                        img.convert("RGB").save(buf, format="JPEG", quality=92)
-                        content = buf.getvalue()
-                        ct = "image/jpeg"
-                    except Exception:
-                        pass
+                # Convert HEIC → JPEG (thread-pool, max 3 concurrent)
+                content, ct = await _maybe_convert_heic(content, ct)
 
                 return {
                     "id":   fid,
