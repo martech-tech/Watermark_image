@@ -1223,8 +1223,8 @@ const IS_LOCAL = ['localhost','127.0.0.1','0.0.0.0'].includes(location.hostname)
 // Local: ดาวน์โหลด 60 ไฟล์/รอบ (5×12), pop-in เร็วขึ้น
 // Cloud: 24 ไฟล์/รอบ (8×3), stagger ปกติ
 const CFG = IS_LOCAL
-  ? { importBatch: 12, importConc: 5, stagger: 18, chunk: 100, directConc: 5 }
-  : { importBatch:  8, importConc: 3, stagger: 32, chunk:  50, directConc: 3 };
+  ? { concurrency: 10, chunk: 100, directConc: 5 }   // local: เร็วกว่า 2×
+  : { concurrency:  5, chunk:  50, directConc: 3 };  // cloud: ประหยัด resource
 
 if (IS_LOCAL) {
   // แสดง badge เล็กๆ ให้รู้ว่ารันแบบ local
@@ -2360,14 +2360,9 @@ async function scanGdriveFolder() {
 }
 
 // ─── IMPORT ALL FOLDER FILES ──────────────────────
-
-// แปลง base64 → Blob (ใช้กับ response จาก /api/drive/files-proxy)
-function _b64toBlob(b64, mime) {
-  const bin = atob(b64);
-  const buf = new Uint8Array(bin.length);
-  for (let i = 0; i < bin.length; i++) buf[i] = bin.charCodeAt(i);
-  return new Blob([buf], { type: mime });
-}
+// Semaphore pipeline: always keep CFG.concurrency downloads running.
+// Each file is added to the gallery the instant it finishes — no batching,
+// no forced stagger — just continuous, steady streaming.
 
 async function importGdriveFolder() {
   const allFiles = GD.folderFiles;
@@ -2377,67 +2372,60 @@ async function importGdriveFolder() {
   const total = allFiles.length;
   let ok = 0, fail = 0;
   const t0 = Date.now();
+  let failedFiles = [];
 
   const cancelBtn = $('btnDriveCancel') || $('btnCancelFolder');
   if (cancelBtn) cancelBtn.style.display = '';
   const pw = $('folderProgressWrap');
   if (pw) pw.classList.add('show');
 
-  // ── 1. Pre-render skeleton placeholders for every file immediately ──
-  // User sees N slots right away — knows exactly how many are coming
+  // ── 1. Pre-render ALL skeleton slots immediately ──────────
+  // User sees the full grid right away, files fill in as they arrive
   const grid = $('galGrid');
-  const emptyMsg = grid.querySelector('.gal-empty');
-  if (emptyMsg) emptyMsg.remove();
+  grid.querySelector('.gal-empty')?.remove();
   allFiles.forEach(f => {
-    if ($('sk-' + f.id) || $('th-skf-' + f.id)) return;
+    if ($('sk-' + f.id)) return;
     const sk = document.createElement('div');
     sk.className = 'thumb thumb-skeleton';
     sk.id = 'sk-' + f.id;
     grid.appendChild(sk);
   });
 
-  // ── 2. Progress helpers ───────────────────────────
+  // ── 2. Progress ──────────────────────────────────────────
   function _setProgress(labelHTML, count, pct) {
     if ($('folderProgressLabel')) $('folderProgressLabel').innerHTML = labelHTML;
     if ($('folderProgressCount')) $('folderProgressCount').textContent = count;
     if ($('folderProgressBar'))   $('folderProgressBar').style.width = pct + '%';
   }
-  function _updateProgress() {
+  function _tick() {
     const done    = ok + fail;
     const elapsed = Math.max(0.1, (Date.now() - t0) / 1000);
     const rate    = (done / elapsed).toFixed(1);
-    const remaining = total - done;
-    const rawEta  = done > 0 ? Math.ceil(remaining / (done / elapsed)) : 0;
-    const etaStr  = rawEta > 3600 ? `~${Math.ceil(rawEta/3600)}h`
-                  : rawEta > 60   ? `~${Math.ceil(rawEta/60)}m`
-                  : rawEta > 0    ? `~${rawEta}s` : '';
-    const pct     = Math.round(done / total * 100);
-    const icon    = done < total
-      ? '<span class="import-spin">⟳</span>'
-      : '✅';
+    const rem     = total - done;
+    const eta     = done > 0 ? Math.ceil(rem / (done / elapsed)) : 0;
+    const etaStr  = eta > 3600 ? `~${Math.ceil(eta/3600)}h`
+                  : eta > 60   ? `~${Math.ceil(eta/60)}m`
+                  : eta > 0    ? `~${eta}s` : '';
     _setProgress(
-      `${icon} ${rate} รูป/วินาที${etaStr ? ' • เหลือ ' + etaStr : ''}`,
+      `<span class="import-spin">⟳</span> ${rate} รูป/วินาที${etaStr ? ' • เหลือ ' + etaStr : ''}`,
       `${ok} / ${total}`,
-      pct
+      Math.round(done / total * 100)
     );
   }
   _setProgress('<span class="import-spin">⟳</span> กำลังโหลด…', `0 / ${total}`, 0);
 
-  // ── 3. Replace skeleton → real thumbnail (animated) ──
+  // ── 3. Skeleton → real thumbnail (pop-in animation) ──────
   async function _addFileSkeletal(f, blob, mime) {
     const ext      = mime.split('/')[1]?.split(';')[0] || 'jpg';
     const filename = f.name.match(/\.[a-z]+$/i) ? f.name : `${f.name}.${ext}`;
     const item     = await loadImageFromBlob(blob, filename);
-
     S.images.push(item);
     $('galBadge').textContent = S.images.length;
     if (S.currentIdx < 0) showPreview(0);
-
-    // Build real card
+    const liveIdx = S.images.length - 1;
     const newEl = document.createElement('div');
     newEl.className = 'thumb thumb-entering';
     newEl.id = 'th-' + item.id;
-    const liveIdx = S.images.length - 1;
     newEl.innerHTML = `
       <img src="${item.thumb}" loading="lazy" alt="">
       <div class="thumb-hover-info"><span class="thumb-name">${item.name}</span></div>
@@ -2445,99 +2433,89 @@ async function importGdriveFolder() {
       <div class="thumb-num">${liveIdx + 1}</div>`;
     newEl.addEventListener('animationend', () => newEl.classList.remove('thumb-entering'), { once: true });
     newEl.addEventListener('click', e => {
-      const li = S.images.indexOf(item);
-      if (li < 0) return;
+      const li = S.images.indexOf(item); if (li < 0) return;
       if (e.ctrlKey || e.metaKey) { item.selected = !item.selected; refreshThumb(item); }
       else if (e.shiftKey && S.lastClickIdx !== undefined) {
         const a = Math.min(S.lastClickIdx, li), b = Math.max(S.lastClickIdx, li);
         S.images.slice(a, b + 1).forEach(im => { im.selected = true; refreshThumb(im); });
-      } else { showPreview(li); }
+      } else showPreview(li);
       S.lastClickIdx = li;
     });
-
-    // Swap skeleton → real card
     const skEl = $('sk-' + f.id);
-    if (skEl) skEl.replaceWith(newEl);
-    else grid.appendChild(newEl);
-
+    if (skEl) skEl.replaceWith(newEl); else grid.appendChild(newEl);
     ok++;
   }
 
   function _markSkeletonError(fileId) {
-    const sk = $('sk-' + fileId);
-    if (!sk) return;
+    const sk = $('sk-' + fileId); if (!sk) return;
     sk.classList.remove('thumb-skeleton');
     sk.classList.add('thumb-error');
     sk.innerHTML = '<span style="font-size:1.1rem">✗</span>';
   }
 
-  // ── 4. Batch fetch helper (unchanged from previous) ──
-  const FILES_PER_REQ = CFG.importBatch;            // 8 cloud / 12 local
-  const SUPER = FILES_PER_REQ * CFG.importConc;     // 24 cloud / 60 local
-
-  // Returns array of maps: fileId → {blob,mime}|null
-  function _fetchSuperBatch(slice) {
-    const batches = [];
-    for (let j = 0; j < slice.length; j += FILES_PER_REQ)
-      batches.push(slice.slice(j, j + FILES_PER_REQ));
-    return Promise.all(batches.map(b => _fetchBatch(b)));
+  // ── 4. Download one file via single-file proxy ────────────
+  async function _downloadOne(f) {
+    const res = await fetch(`${_base()}/api/drive/file/${f.id}`, {
+      signal: AbortSignal.timeout(IS_LOCAL ? 120000 : 45000),
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const mime = (res.headers.get('content-type') || 'image/jpeg').split(';')[0].trim();
+    const blob = await res.blob();
+    if (blob.size < 500) throw new Error('ไฟล์ว่างเปล่า');
+    return { blob, mime };
   }
 
-  // ── 5. Double-buffer pipeline ─────────────────────
-  //   Download super-batch[i+1] while stagger-adding super-batch[i]
-  //   → gallery is always filling; server is always busy
-  const STAGGER_MS = CFG.stagger;    // 32ms cloud / 18ms local
-  let failedFiles  = [];
+  // ── 5. Semaphore pump ─────────────────────────────────────
+  // Always keeps exactly CFG.concurrency downloads running.
+  // As soon as one finishes, the next starts immediately.
+  // Cloud: 5 concurrent   Local: 10 concurrent
+  const CONCURRENCY = CFG.concurrency;
 
-  const _sbFetch = i => i < allFiles.length
-    ? _fetchSuperBatch(allFiles.slice(i, i + SUPER))
-    : null;
+  await new Promise(resolve => {
+    let next = 0, active = 0, completed = 0;
 
-  let curDownload = _sbFetch(0);           // start first batch now
-  let nxtDownload = _sbFetch(SUPER);       // prefetch second batch in parallel
+    function pump() {
+      if (GD.cancelFlag && active === 0) { resolve(); return; }
 
-  for (let i = 0; i < allFiles.length; i += SUPER) {
-    if (GD.cancelFlag) break;
-
-    const superSlice = allFiles.slice(i, i + SUPER);
-    const batchMaps  = await curDownload;  // wait for current (usually already done)
-
-    // Advance double-buffer
-    curDownload  = nxtDownload;
-    nxtDownload  = _sbFetch(i + SUPER * 2);
-
-    // Stagger-add files one by one — creates the "always working" feel
-    for (let idx = 0; idx < superSlice.length; idx++) {
-      if (GD.cancelFlag) break;
-      const f    = superSlice[idx];
-      const map  = batchMaps[Math.floor(idx / FILES_PER_REQ)];
-      const data = map?.[f.id];
-      if (data) {
-        try { await _addFileSkeletal(f, data.blob, data.mime); }
-        catch { fail++; _markSkeletonError(f.id); failedFiles.push(f); }
-      } else {
-        fail++; _markSkeletonError(f.id); failedFiles.push(f);
+      while (!GD.cancelFlag && active < CONCURRENCY && next < allFiles.length) {
+        const f = allFiles[next++];
+        active++;
+        _downloadOne(f)
+          .then(({ blob, mime }) => _addFileSkeletal(f, blob, mime))
+          .catch(err => {
+            fail++;
+            failedFiles.push(f);
+            _markSkeletonError(f.id);
+            flog(`fi-${f.id}`, 'err', '✗', `❌ ${f.name} — ${err.message}`);
+          })
+          .finally(() => {
+            active--;
+            completed++;
+            _tick();
+            pump();   // refill the freed slot immediately
+            if (completed === allFiles.length) resolve();
+          });
       }
-      _updateProgress();
-      await sleep(STAGGER_MS);
+      if (next >= allFiles.length && active === 0) resolve();
     }
-  }
 
-  // ── 6. Retry rounds 1–2 (single-file, more reliable) ──
+    if (!allFiles.length) { resolve(); return; }
+    pump();
+  });
+
+  // ── 6. Retry: failed files — try once more, single file ──
   for (let round = 1; round <= 2 && failedFiles.length > 0 && !GD.cancelFlag; round++) {
-    const toRetry = [...failedFiles];
-    failedFiles = [];
+    const toRetry = [...failedFiles]; failedFiles = [];
     flog(`retry-${round}`, 'warn', '⚠', `🔄 ลองใหม่รอบ ${round}: ${toRetry.length} ไฟล์`);
     _setProgress(
       `<span class="import-spin">⟳</span> ลองใหม่รอบ ${round}…`,
       `${toRetry.length} ไฟล์`, 0
     );
     await sleep(1200 * round);
-
-    for (let i = 0; i < toRetry.length; i++) {
+    for (const f of toRetry) {
       if (GD.cancelFlag) break;
-      const f = toRetry[i];
       try {
+        // fetchGdriveImage has a thumbnail fallback (strategy 2) — better for retry
         const { blob, ext } = await fetchGdriveImage(f.id);
         await _addFileSkeletal(f, blob, `image/${ext}`);
         fail--;
@@ -2545,16 +2523,15 @@ async function importGdriveFolder() {
         failedFiles.push(f);
         flog(`fi-${f.id}`, 'err', '✗', `❌ ${f.name} — ${err.message}`);
       }
-      _updateProgress();
+      _tick();
     }
   }
 
-  // ── Done ─────────────────────────────────────────
+  // ── Done ─────────────────────────────────────────────────
   if (cancelBtn) cancelBtn.style.display = 'none';
   const stillFail = failedFiles.length;
   _setProgress(
-    GD.cancelFlag
-      ? '⛔ หยุดแล้ว'
+    GD.cancelFlag ? '⛔ หยุดแล้ว'
       : `✅ เสร็จสิ้น — ${ok} รูป${stillFail ? ` (ล้มเหลว ${stillFail})` : ''}`,
     `${ok} / ${total}`, 100
   );
